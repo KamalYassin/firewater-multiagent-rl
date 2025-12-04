@@ -175,11 +175,17 @@ class FireWaterEnv:
         each a (C, H, W) float32 tensor.
     """
 
-    def __init__(self, level: LevelSpec, max_steps: int = 200,
-                 step_penalty: float = -0.01,
-                 success_reward: float = 1.0,
+    def __init__(self, level: LevelSpec, max_steps: int = 50,
+                 step_penalty: float = -0.002,
+                 success_reward: float = 40.0,
                  death_penalty: float = -1.0,
-                 hazards_mode: str = "wall"):
+                 hazards_mode: str = "wall",
+                 exit_partial_reward: float = 5.0,
+                 switch_reward: float = 0.15,
+                 push_block_reward: float = 0.02,
+                 dist_coef: float = 0.1,
+                 move_reward: float = 0.05,
+                 blocked_move_penalty: float = -0.1):
         self.level = level
         self.height = level.height
         self.width = level.width
@@ -190,6 +196,18 @@ class FireWaterEnv:
         self.success_reward = success_reward
         self.death_penalty = death_penalty
 
+        # shaping params
+        self.exit_partial_reward = exit_partial_reward
+        self.switch_reward = switch_reward
+        self.push_block_reward = push_block_reward
+        self.dist_coef = dist_coef
+        self.move_reward = move_reward
+        self.blocked_move_penalty = blocked_move_penalty
+
+        # distance shaping state
+        self.last_fire_dist = None
+        self.last_water_dist = None
+
         self.hazards_mode = hazards_mode
 
         # state
@@ -198,6 +216,10 @@ class FireWaterEnv:
         # does each agent exist?
         self.has_fire = level.fire_spawn is not None
         self.has_water = level.water_spawn is not None
+
+        # tracking for one-time rewards
+        self.fire_reached_exit_once = False
+        self.water_reached_exit_once = False
 
         self.reset()
 
@@ -216,6 +238,11 @@ class FireWaterEnv:
             max_steps=self.max_steps,
         )
         self.state = st
+
+        # initialize distance shaping baselines
+        self.last_fire_dist = self._manhattan_dist(st.fire_pos, st.fire_exit) if self.has_fire else None
+        self.last_water_dist = self._manhattan_dist(st.water_pos, st.water_exit) if self.has_water else None
+
         return self._build_observation()
 
     def step(self, action_fire: Optional[int], action_water: Optional[int]):
@@ -226,7 +253,7 @@ class FireWaterEnv:
         Returns obs, reward (shared scalar), done, info.
         """
         assert self.state is not None, "Call reset() before step()"
-        st = self.state
+        prev_st = self.state
 
         # normalize actions for missing agents
         if not self.has_fire:
@@ -235,10 +262,16 @@ class FireWaterEnv:
             action_water = ACTION_STAY
 
         # apply actions and compute next state
-        next_state, events = self._apply_actions(st, action_fire, action_water)
+        next_state, events = self._apply_actions(prev_st, action_fire, action_water)
 
         done, success, death = self._compute_done_and_flags(next_state, events)
-        reward = self._compute_reward(done, success, death)
+        reward = self._compute_reward(
+            st=next_state,
+            done=done,
+            success=success,
+            death=death,
+            events=events
+        )
 
         next_state.steps_taken += 1
         if next_state.steps_taken >= next_state.max_steps:
@@ -296,6 +329,13 @@ class FireWaterEnv:
             return False
         switch_char = DOOR_TO_SWITCH[tile]
         return switch_char in self._active_switch_ids(st)
+    
+    def _manhattan_dist(self, pos: Optional[Tuple[int, int]],
+                    exit_pos: Optional[Tuple[int, int]]) -> Optional[int]:
+        """Manhattan distance between pos and exit_pos, or None if missing."""
+        if pos is None or exit_pos is None:
+            return None
+        return abs(pos[0] - exit_pos[0]) + abs(pos[1] - exit_pos[1])
 
     def _is_passable_for_agent(self, st: GameState, pos: Tuple[int, int], agent_is_fire: bool) -> bool:
         if not self._in_bounds(*pos):
@@ -338,7 +378,7 @@ class FireWaterEnv:
             return False
 
         if tile in (LAVA, WATER):
-            return False
+            return True
 
         # doors: only passable if open
         if tile in DOOR_CHARS and not self._door_is_open(st, pos):
@@ -545,13 +585,56 @@ class FireWaterEnv:
 
         return done, success, death
 
-    def _compute_reward(self, done: bool, success: bool, death: bool) -> float:
+    def _compute_reward(self,
+                        st: GameState,
+                        done: bool,
+                        success: bool,
+                        death: bool,
+                        events: Dict) -> float:
+        """
+        Compute reward with:
+          - base step penalty
+          - optional distance-based shaping toward exits
+          - terminal success/death bonuses
+        """
+        # base step cost
         r = self.step_penalty
+
+        # distance shaping toward exits
+        shaping_coef = self.dist_coef
+
+        # Fire
+        if self.has_fire and st.fire_exit is not None:
+            d_new = self._manhattan_dist(st.fire_pos, st.fire_exit)
+            if d_new is not None and self.last_fire_dist is not None:
+                delta = self.last_fire_dist - d_new
+                if delta > 0:
+                    r += shaping_coef * delta
+            self.last_fire_dist = d_new
+
+        # Water
+        if self.has_water and st.water_exit is not None:
+            d_new = self._manhattan_dist(st.water_pos, st.water_exit)
+            if d_new is not None and self.last_water_dist is not None:
+                delta = self.last_water_dist - d_new
+                if delta > 0:
+                    r += shaping_coef * delta
+            self.last_water_dist = d_new
+
+        # terminal bonus/penalty
         if done:
             if success:
                 r += self.success_reward
             if death:
                 r += self.death_penalty
+        
+        for agent_key in ("fire", "water"):
+            move_evt = events.get(agent_key, {}).get("move", "")
+            if move_evt == "moved":
+                r += self.move_reward
+            elif move_evt.startswith("blocked"):
+                r += self.blocked_move_penalty
+
         return r
 
     # ---------------------------------- Observation builder -------------------------------------
