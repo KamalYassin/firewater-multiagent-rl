@@ -185,7 +185,9 @@ class FireWaterEnv:
                  push_block_reward: float = 0.02,
                  dist_coef: float = 0.1,
                  move_reward: float = 0.05,
-                 blocked_move_penalty: float = -0.1):
+                 blocked_move_penalty: float = -0.1,
+                 stagnation_penalty: float = -0.02,
+                 stay_penalty: float = -0.03):
         self.level = level
         self.height = level.height
         self.width = level.width
@@ -203,6 +205,8 @@ class FireWaterEnv:
         self.dist_coef = dist_coef
         self.move_reward = move_reward
         self.blocked_move_penalty = blocked_move_penalty
+        self.stagnation_penalty = stagnation_penalty
+        self.stay_penalty = stay_penalty
 
         # distance shaping state
         self.last_fire_dist = None
@@ -220,6 +224,9 @@ class FireWaterEnv:
         # tracking for one-time rewards
         self.fire_reached_exit_once = False
         self.water_reached_exit_once = False
+        self.fire_switches_seen = set()
+        self.water_switches_seen = set()
+        self.block_switches_seen = set()
 
         self.reset()
 
@@ -237,12 +244,22 @@ class FireWaterEnv:
             steps_taken=0,
             max_steps=self.max_steps,
         )
-        self.state = st
 
         # initialize distance shaping baselines
-        self.last_fire_dist = self._manhattan_dist(st.fire_pos, st.fire_exit) if self.has_fire else None
-        self.last_water_dist = self._manhattan_dist(st.water_pos, st.water_exit) if self.has_water else None
+        self.last_fire_dist = None
+        self.last_water_dist = None
+        if self.has_fire and st.fire_exit is not None:
+            self.last_fire_dist = self._manhattan_dist(st.fire_pos, st.fire_exit)
+        if self.has_water and st.water_exit is not None:
+            self.last_water_dist = self._manhattan_dist(st.water_pos, st.water_exit)
 
+        self.fire_reached_exit_once = False
+        self.water_reached_exit_once = False
+        self.fire_switches_seen = set()
+        self.water_switches_seen = set()
+        self.block_switches_seen = set()
+
+        self.state = st
         return self._build_observation()
 
     def step(self, action_fire: Optional[int], action_water: Optional[int]):
@@ -253,7 +270,7 @@ class FireWaterEnv:
         Returns obs, reward (shared scalar), done, info.
         """
         assert self.state is not None, "Call reset() before step()"
-        prev_st = self.state
+        st = self.state
 
         # normalize actions for missing agents
         if not self.has_fire:
@@ -262,9 +279,10 @@ class FireWaterEnv:
             action_water = ACTION_STAY
 
         # apply actions and compute next state
-        next_state, events = self._apply_actions(prev_st, action_fire, action_water)
+        next_state, events = self._apply_actions(st, action_fire, action_water)
 
         done, success, death = self._compute_done_and_flags(next_state, events)
+
         reward = self._compute_reward(
             st=next_state,
             done=done,
@@ -584,6 +602,9 @@ class FireWaterEnv:
             success = True
 
         return done, success, death
+    
+    def _is_switch_tile(self, tile: str) -> bool:
+        return tile.isdigit()
 
     def _compute_reward(self,
                         st: GameState,
@@ -600,40 +621,114 @@ class FireWaterEnv:
         # base step cost
         r = self.step_penalty
 
-        # distance shaping toward exits
         shaping_coef = self.dist_coef
 
-        # Fire
+        # --------- partial rewards for exit progress ---------
+        # One-time bonus when each agent reaches its exit for the first time
+        for agent_key, pos, exit_pos, flag_name in [
+            ("fire", st.fire_pos, st.fire_exit, "fire_reached_exit_once"),
+            ("water", st.water_pos, st.water_exit, "water_reached_exit_once"),
+        ]:
+            if pos is None or exit_pos is None:
+                continue
+            if getattr(self, flag_name):
+                continue  # already got bonus this episode
+            if pos == exit_pos:
+                r += self.exit_partial_reward
+                setattr(self, flag_name, True)
+
+        # --------- reward switches & blocks ---------
+        # Reward an agent the first time it stands on each switch tile
+        for agent_key, pos, seen_attr in [
+            ("fire", st.fire_pos, "fire_switches_seen"),
+            ("water", st.water_pos, "water_switches_seen"),
+        ]:
+            if pos is None:
+                continue
+            x, y = pos
+            tile = st.base_grid[y, x]
+            if tile in SWITCH_CHARS:
+                seen = getattr(self, seen_attr)
+                if pos not in seen:
+                    r += self.switch_reward
+                    seen.add(pos)
+
+        # Reward blocks being pushed onto a new switch tile
+        for (bx, by) in st.blocks:
+            tile = st.base_grid[by, bx]
+            if tile in SWITCH_CHARS:
+                if (bx, by) not in self.block_switches_seen:
+                    r += 0.5 * self.switch_reward
+                    self.block_switches_seen.add((bx, by))
+
+        # Reward actually pushing blocks at all
+        for agent_key in ["fire", "water"]:
+            move_evt = events.get(agent_key, {}).get("move", "")
+            if move_evt == "pushed_block":
+                r += self.push_block_reward
+
+        # --------- FIRE distance shaping + stagnation ---------
         if self.has_fire and st.fire_exit is not None:
             d_new = self._manhattan_dist(st.fire_pos, st.fire_exit)
+
             if d_new is not None and self.last_fire_dist is not None:
                 delta = self.last_fire_dist - d_new
                 if delta > 0:
+                    # reward moving closer
                     r += shaping_coef * delta
+                elif delta == 0:
+                    # agent tried to move but didn't change distance -> stagnation
+                    move_evt = events.get("fire", {}).get("move", "")
+                    if move_evt in ("moved", "pushed_block") and st.fire_pos != st.fire_exit:
+                        r += self.stagnation_penalty
+
             self.last_fire_dist = d_new
 
-        # Water
+        # --------- WATER distance shaping + stagnation ---------
         if self.has_water and st.water_exit is not None:
             d_new = self._manhattan_dist(st.water_pos, st.water_exit)
+
             if d_new is not None and self.last_water_dist is not None:
                 delta = self.last_water_dist - d_new
                 if delta > 0:
                     r += shaping_coef * delta
+                elif delta == 0:
+                    move_evt = events.get("water", {}).get("move", "")
+                    if move_evt in ("moved", "pushed_block") and st.water_pos != st.water_exit:
+                        r += self.stagnation_penalty
+
             self.last_water_dist = d_new
 
-        # terminal bonus/penalty
+        # --------- penalize bad moves ---------
+        for agent_key in ["fire", "water"]:
+            move_evt = events.get(agent_key, {}).get("move", "")
+            if move_evt.startswith("blocked"):
+                r += self.blocked_move_penalty  # e.g. -0.1
+
+        # --------- terminal success/death bonuses ---------
         if done:
             if success:
                 r += self.success_reward
             if death:
                 r += self.death_penalty
-        
-        for agent_key in ("fire", "water"):
+
+        # ----- STAY penalty only if not on exit or switch -----
+        for agent_key, pos, exit_pos in [
+            ("fire", st.fire_pos, st.fire_exit),
+            ("water", st.water_pos, st.water_exit)
+        ]:
             move_evt = events.get(agent_key, {}).get("move", "")
-            if move_evt == "moved":
-                r += self.move_reward
-            elif move_evt.startswith("blocked"):
-                r += self.blocked_move_penalty
+
+            # Agent exists AND tried to stay still
+            if move_evt == "stay" and pos is not None:
+
+                tile = st.base_grid[pos[1], pos[0]]
+                on_exit = (exit_pos is not None and pos == exit_pos)
+                on_switch = tile.isdigit()
+
+                # Penalize only if they are NOT doing something useful
+                if not on_exit and not on_switch:
+                    r += self.stay_penalty
 
         return r
 

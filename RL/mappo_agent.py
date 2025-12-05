@@ -6,8 +6,8 @@ from .buffer import RolloutBuffer
 
 class MAPPOAgent:
     def __init__(self, encoder, actor_fire, actor_water, critic, optimizer,
-                 gamma: float = 0.99, lam: float = 0.95, clip_eps: float = 0.2,
-                 value_coef: float = 0.5, entropy_coef: float = 0.01):
+                 gamma: float = 0.97, lam: float = 0.95, clip_eps: float = 0.2,
+                 value_coef: float = 0.5, entropy_coef: float = 0.02):
         self.encoder = encoder
         self.actor_fire = actor_fire
         self.actor_water = actor_water

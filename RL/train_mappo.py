@@ -152,7 +152,7 @@ def main():
 
     agent = MAPPOAgent(encoder, actor_fire, actor_water, critic, optimizer)
 
-    rollout_steps = 128      
+    rollout_steps = 256      
     num_updates = 500          
     max_episode_steps = 50   
 
