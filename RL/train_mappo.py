@@ -6,12 +6,14 @@ import random
 import argparse
 import time
 
+from typing import List, Dict, Tuple
 from .env_wrapper import MultiAgentFireWaterEnv
 from .networks import ConvEncoder, Actor, CentralCritic
 from .mappo_agent import MAPPOAgent
 from .buffer import RolloutBuffer
 
 TRAIN_ROOT = "env/levels/dataset/train"
+CURRICULUM_ROOT = "env/levels/curriculum"
 
 
 def collect_level_paths(train_root: str, difficulties=("easy", "medium", "hard")):
@@ -40,7 +42,7 @@ def difficulties_for_update(update: int, total_updates: int):
     #     return ("easy", "medium")
     # else:
     #     return ("easy", "medium", "hard")
-    return ("easy",)
+    return ("medium",)
 
 
 def act_greedy(agent: MAPPOAgent,
@@ -126,10 +128,77 @@ def random_policy_baseline(env: MultiAgentFireWaterEnv,
 
     return successes / float(num_episodes)
 
+def discover_curriculum_stages(root: str) -> Tuple[List[str], Dict[str, List[str]]]:
+    """
+    Look under `root` for subdirectories whose names end in a digit [0-9]
+    and contain at least one `.txt` file.
+
+    Returns:
+        stage_names: ordered list of stage directory names (e.g. ["stage0", "stage1", "easy2"])
+        stage_level_paths: dict mapping stage_name -> list of level paths
+    """
+    stage_meta = []
+    stage_level_paths: Dict[str, List[str]] = {}
+
+    if not os.path.isdir(root):
+        return [], {}
+
+    for name in os.listdir(root):
+        full = os.path.join(root, name)
+        if not os.path.isdir(full):
+            continue
+
+        last = name[-1]
+        if not last.isdigit():
+            continue
+
+        order = int(last)
+
+        # collect levels
+        paths = glob.glob(os.path.join(full, "*.txt"))
+        if not paths:
+            continue
+
+        stage_meta.append((order, name))
+        stage_level_paths[name] = paths
+
+    # sort by trailing digit
+    stage_meta.sort(key=lambda t: t[0])
+    stage_names = [name for _, name in stage_meta]
+
+    return stage_names, stage_level_paths
+
+
+def curriculum_stage_for_update(update: int,
+                                num_updates: int,
+                                stage_names: List[str]) -> str:
+    """
+    Evenly divide [1..num_updates] across len(stage_names) stages.
+
+    Example: num_updates=500, 4 stages:
+      updates 1–125  -> stage_names[0]
+      updates 126–250 -> stage_names[1]
+      updates 251–375 -> stage_names[2]
+      updates 376–500 -> stage_names[3]
+    """
+    n = len(stage_names)
+    if n == 0:
+        raise ValueError("curriculum_stage_for_update called with no stages")
+
+    # 0-based index into stage_names
+    idx = min((update - 1) * n // num_updates, n - 1)
+    return stage_names[idx]
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Train MAPPO agent on FireWater levels."
+    )
+    parser.add_argument(
+        "--training-mode",
+        choices=["easy", "curriculum"],
+        default="easy",
+        help="Choose between old easy-only training or curriculum training."
     )
     parser.add_argument(
         "--ckpt",
@@ -148,11 +217,24 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Discover curriculum (if any)
+    curriculum_stage_names, curriculum_levels = discover_curriculum_stages(CURRICULUM_ROOT)
+    
+    use_curriculum = (args.training_mode == "curriculum")
+
+    if use_curriculum:
+        print(f"[Curriculum] Using stages (by trailing digit order): {curriculum_stage_names}")
+        # Use the first stage to infer observation shape
+        first_stage = curriculum_stage_names[0]
+        tmp_env = MultiAgentFireWaterEnv(curriculum_levels[first_stage])
+    else:
+        print("[Curriculum] No curriculum stages found. Training on default train levels.")
+        tmp_env = make_env(difficulties=("easy", "medium", "hard"))
+
     start_time = time.time()
 
     env = make_env()
 
-    tmp_env = make_env(difficulties=("easy", "medium", "hard"))
     tmp_obs = tmp_env.reset()
     sample_obs = tmp_obs["fire"]
     C, H, W = sample_obs.shape
@@ -198,6 +280,7 @@ def main():
     episode_lengths = []
     episode_successes = []
 
+    current_stage = None
     current_diffs = None
     env = None
     obs = None
@@ -212,16 +295,30 @@ def main():
             agent.entropy_coef = 0.0
             print(f"[Schedule] Turning off entropy at update {update}")
 
-        diffs = difficulties_for_update(update, num_updates)
-        if diffs != current_diffs:
-            current_diffs = diffs
-            print(f"\n[Stage] Update {update}: training on difficulties={current_diffs}", flush=True)
-            env = make_env(difficulties=current_diffs)
-            obs = env.reset()
-            done = {"__all__": False}
-            ep_return = 0.0
-            ep_length = 0
-            ep_success = False
+        if use_curriculum:
+            stage = curriculum_stage_for_update(update, num_updates, curriculum_stage_names)
+            if stage != current_stage:
+                current_stage = stage
+                level_paths = curriculum_levels[stage]
+                print(f"\n[Stage] Update {update}: training on curriculum stage '{stage}' "
+                      f"({len(level_paths)} levels)", flush=True)
+                env = MultiAgentFireWaterEnv(level_paths)
+                obs = env.reset()
+                done = {"__all__": False}
+                ep_return = 0.0
+                ep_length = 0
+                ep_success = False
+        else:
+            diffs = difficulties_for_update(update, num_updates)
+            if diffs != current_diffs or env is None:
+                current_diffs = diffs
+                print(f"\n[Stage] Update {update}: training on difficulties={current_diffs}", flush=True)
+                env = make_env(difficulties=current_diffs)
+                obs = env.reset()
+                done = {"__all__": False}
+                ep_return = 0.0
+                ep_length = 0
+                ep_success = False
 
         buffer.reset()
 

@@ -177,13 +177,13 @@ class FireWaterEnv:
 
     def __init__(self, level: LevelSpec, max_steps: int = 50,
                  step_penalty: float = -0.01,
-                 success_reward: float = 5.0,
+                 success_reward: float = 10.0,
                  death_penalty: float = -1.0,
                  hazards_mode: str = "wall",
-                 exit_partial_reward: float = 0.0,
-                 switch_reward: float = 0.0,
-                 push_block_reward: float = 0.0,
-                 dist_coef: float = 0.1,
+                 exit_partial_reward: float = 1.0,
+                 switch_reward: float = 0.9,
+                 push_block_reward: float = 0.05,
+                 dist_coef: float = 0.05,
                  move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
                  stagnation_penalty: float = -0.02,
@@ -211,6 +211,8 @@ class FireWaterEnv:
         # distance shaping state
         self.last_fire_dist = None
         self.last_water_dist = None
+        self.fire_best_dist = None
+        self.water_best_dist = None
 
         self.hazards_mode = hazards_mode
 
@@ -248,10 +250,18 @@ class FireWaterEnv:
         # initialize distance shaping baselines
         self.last_fire_dist = None
         self.last_water_dist = None
+        self.fire_best_dist = None
+        self.water_best_dist = None
+
         if self.has_fire and st.fire_exit is not None:
-            self.last_fire_dist = self._manhattan_dist(st.fire_pos, st.fire_exit)
+            d0 = self._manhattan_dist(st.fire_pos, st.fire_exit)
+            self.last_fire_dist = d0
+            self.fire_best_dist = d0
+
         if self.has_water and st.water_exit is not None:
-            self.last_water_dist = self._manhattan_dist(st.water_pos, st.water_exit)
+            d0 = self._manhattan_dist(st.water_pos, st.water_exit)
+            self.last_water_dist = d0
+            self.water_best_dist = d0
 
         self.fire_reached_exit_once = False
         self.water_reached_exit_once = False
@@ -623,7 +633,7 @@ class FireWaterEnv:
 
         shaping_coef = self.dist_coef
 
-        # --------- partial rewards for exit progress ---------
+        # ---------- partial rewards for exit progress ----------
         # One-time bonus when each agent reaches its exit for the first time
         for agent_key, pos, exit_pos, flag_name in [
             ("fire", st.fire_pos, st.fire_exit, "fire_reached_exit_once"),
@@ -637,7 +647,7 @@ class FireWaterEnv:
                 r += self.exit_partial_reward
                 setattr(self, flag_name, True)
 
-        # --------- reward switches & blocks ---------
+        # ---------- reward switches & blocks ----------
         # Reward an agent the first time it stands on each switch tile
         for agent_key, pos, seen_attr in [
             ("fire", st.fire_pos, "fire_switches_seen"),
@@ -667,44 +677,65 @@ class FireWaterEnv:
             if move_evt == "pushed_block":
                 r += self.push_block_reward
 
-        # FIRE
-        if self.has_fire and st.fire_exit is not None:
+        # ---------- FIRE distance shaping + stagnation (best-so-far) ----------
+        if self.has_fire and st.fire_exit is not None and st.fire_pos is not None:
             d_new = self._manhattan_dist(st.fire_pos, st.fire_exit)
-            if d_new is not None and self.last_fire_dist is not None:
-                delta = self.last_fire_dist - d_new
-                move_evt = events.get("fire", {}).get("move", "")
-                if d_new == self.last_fire_dist and move_evt != "stay" and st.fire_pos != st.fire_exit:
-                    r += self.stagnation_penalty
-                elif delta > 0:
-                    r += shaping_coef * delta
-            self.last_fire_dist = d_new
 
-        # WATER
-        if self.has_water and st.water_exit is not None:
+            if d_new is not None:
+                # stagnation check based on last step
+                if self.last_fire_dist is not None:
+                    delta_step = self.last_fire_dist - d_new
+                    move_evt = events.get("fire", {}).get("move", "")
+                    if delta_step == 0 and move_evt in ("moved", "pushed_block") and st.fire_pos != st.fire_exit:
+                        r += self.stagnation_penalty
+
+                # shaping based on best distance so far in this episode
+                if self.fire_best_dist is None:
+                    self.fire_best_dist = d_new
+                else:
+                    delta_best = self.fire_best_dist - d_new
+                    if delta_best > 0:
+                        # only reward new progress towards exit
+                        r += shaping_coef * delta_best
+                        self.fire_best_dist = d_new
+
+                self.last_fire_dist = d_new
+
+        # ---------- WATER distance shaping + stagnation (best-so-far) ----------
+        if self.has_water and st.water_exit is not None and st.water_pos is not None:
             d_new = self._manhattan_dist(st.water_pos, st.water_exit)
-            if d_new is not None and self.last_water_dist is not None:
-                delta = self.last_water_dist - d_new
-                move_evt = events.get("water", {}).get("move", "")
-                if d_new == self.last_water_dist and move_evt != "stay" and st.water_pos != st.water_exit:
-                    r += self.stagnation_penalty
-                elif delta > 0:
-                    r += shaping_coef * delta
-            self.last_water_dist = d_new
 
-        # --------- penalize bad moves ---------
+            if d_new is not None:
+                if self.last_water_dist is not None:
+                    delta_step = self.last_water_dist - d_new
+                    move_evt = events.get("water", {}).get("move", "")
+                    if delta_step == 0 and move_evt in ("moved", "pushed_block") and st.water_pos != st.water_exit:
+                        r += self.stagnation_penalty
+
+                if self.water_best_dist is None:
+                    self.water_best_dist = d_new
+                else:
+                    delta_best = self.water_best_dist - d_new
+                    if delta_best > 0:
+                        r += shaping_coef * delta_best
+                        self.water_best_dist = d_new
+
+                self.last_water_dist = d_new
+
+        # ---------- penalize bad moves ----------
         for agent_key in ["fire", "water"]:
             move_evt = events.get(agent_key, {}).get("move", "")
             if move_evt.startswith("blocked"):
                 r += self.blocked_move_penalty  # e.g. -0.1
 
-        # --------- terminal success/death bonuses ---------
+        # ---------- terminal success/death bonuses ----------
         if done:
             if success:
                 r += self.success_reward
             if death:
                 r += self.death_penalty
 
-        # ----- STAY penalty only if not on exit or switch -----
+        # ---------- STAY penalty only if not on exit or switch ----------
         for agent_key, pos, exit_pos in [
             ("fire", st.fire_pos, st.fire_exit),
             ("water", st.water_pos, st.water_exit)
