@@ -3,6 +3,8 @@ import numpy as np
 import glob
 import os
 import random
+import argparse
+import time
 
 from .env_wrapper import MultiAgentFireWaterEnv
 from .networks import ConvEncoder, Actor, CentralCritic
@@ -56,8 +58,8 @@ def act_greedy(agent: MAPPOAgent,
         logits_f = agent.actor_fire(feat_fire)
         logits_w = agent.actor_water(feat_water)
 
-        a_f = torch.argmax(logits_f, dim=-1)  # (1,)
-        a_w = torch.argmax(logits_w, dim=-1)  # (1,)
+        a_f = torch.argmax(logits_f, dim=-1)
+        a_w = torch.argmax(logits_w, dim=-1)
 
     return int(a_f.item()), int(a_w.item())
 
@@ -126,7 +128,28 @@ def random_policy_baseline(env: MultiAgentFireWaterEnv,
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Train MAPPO agent on FireWater levels."
+    )
+    parser.add_argument(
+        "--ckpt",
+        type=str,
+        default=None,
+        help="Path to checkpoint .pt file to resume from. "
+             "If omitted, training starts from scratch.",
+    )
+    parser.add_argument(
+        "--updates",
+        type=int,
+        default=500,
+        help="Number of training updates to run in this call (default: 500).",
+    )
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    start_time = time.time()
+
     env = make_env()
 
     tmp_env = make_env(difficulties=("easy", "medium", "hard"))
@@ -150,6 +173,19 @@ def main():
     )
     optimizer = torch.optim.Adam(params, lr=3e-4)
 
+    if args.ckpt is not None:
+        print(f"\n[RESUME] Loading checkpoint from {args.ckpt}\n", flush=True)
+        ckpt = torch.load(args.ckpt, map_location=device)
+
+        encoder.load_state_dict(ckpt["encoder"])
+        actor_fire.load_state_dict(ckpt["actor_fire"])
+        actor_water.load_state_dict(ckpt["actor_water"])
+        critic.load_state_dict(ckpt["critic"])
+
+        optimizer.load_state_dict(ckpt["optimizer"])
+    else:
+        print("\n[TRAIN] Starting from scratch\n", flush=True)
+
     agent = MAPPOAgent(encoder, actor_fire, actor_water, critic, optimizer)
 
     rollout_steps = 256      
@@ -171,6 +207,11 @@ def main():
     ep_success = False
 
     for update in range(1, num_updates + 1):
+
+        if update == num_updates // 2 + 1:
+            agent.entropy_coef = 0.0
+            print(f"[Schedule] Turning off entropy at update {update}")
+
         diffs = difficulties_for_update(update, num_updates)
         if diffs != current_diffs:
             current_diffs = diffs
@@ -259,10 +300,18 @@ def main():
         )
 
     print("Training complete.")
+    total_time = time.time() - start_time
+    print(f"\n=== TRAINING TIME ===")
+    print(f"Total wall-clock: {total_time/60:.2f} min")
+    print(f"Avg per update: {total_time / num_updates:.2f} s/update")
 
     # Save checkpoint
     os.makedirs("checkpoints", exist_ok=True)
-    ckpt_path = "checkpoints/mappo_easy_curriculum.pt"
+    if args.ckpt is not None:
+        base, ext = os.path.splitext(args.ckpt)
+        ckpt_path = base + "_resume" + ext
+    else:
+        ckpt_path = "checkpoints/mappo_easy_curriculum.pt"
 
     torch.save(
         {

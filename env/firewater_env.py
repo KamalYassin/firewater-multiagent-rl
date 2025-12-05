@@ -176,18 +176,18 @@ class FireWaterEnv:
     """
 
     def __init__(self, level: LevelSpec, max_steps: int = 50,
-                 step_penalty: float = -0.002,
-                 success_reward: float = 40.0,
+                 step_penalty: float = -0.01,
+                 success_reward: float = 5.0,
                  death_penalty: float = -1.0,
                  hazards_mode: str = "wall",
-                 exit_partial_reward: float = 5.0,
-                 switch_reward: float = 0.15,
-                 push_block_reward: float = 0.02,
+                 exit_partial_reward: float = 0.0,
+                 switch_reward: float = 0.0,
+                 push_block_reward: float = 0.0,
                  dist_coef: float = 0.1,
-                 move_reward: float = 0.05,
+                 move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
                  stagnation_penalty: float = -0.02,
-                 stay_penalty: float = -0.03):
+                 stay_penalty: float = -0.02):
         self.level = level
         self.height = level.height
         self.width = level.width
@@ -667,36 +667,28 @@ class FireWaterEnv:
             if move_evt == "pushed_block":
                 r += self.push_block_reward
 
-        # --------- FIRE distance shaping + stagnation ---------
+        # FIRE
         if self.has_fire and st.fire_exit is not None:
             d_new = self._manhattan_dist(st.fire_pos, st.fire_exit)
-
             if d_new is not None and self.last_fire_dist is not None:
                 delta = self.last_fire_dist - d_new
-                if delta > 0:
-                    # reward moving closer
+                move_evt = events.get("fire", {}).get("move", "")
+                if d_new == self.last_fire_dist and move_evt != "stay" and st.fire_pos != st.fire_exit:
+                    r += self.stagnation_penalty
+                elif delta > 0:
                     r += shaping_coef * delta
-                elif delta == 0:
-                    # agent tried to move but didn't change distance -> stagnation
-                    move_evt = events.get("fire", {}).get("move", "")
-                    if move_evt in ("moved", "pushed_block") and st.fire_pos != st.fire_exit:
-                        r += self.stagnation_penalty
-
             self.last_fire_dist = d_new
 
-        # --------- WATER distance shaping + stagnation ---------
+        # WATER
         if self.has_water and st.water_exit is not None:
             d_new = self._manhattan_dist(st.water_pos, st.water_exit)
-
             if d_new is not None and self.last_water_dist is not None:
                 delta = self.last_water_dist - d_new
-                if delta > 0:
+                move_evt = events.get("water", {}).get("move", "")
+                if d_new == self.last_water_dist and move_evt != "stay" and st.water_pos != st.water_exit:
+                    r += self.stagnation_penalty
+                elif delta > 0:
                     r += shaping_coef * delta
-                elif delta == 0:
-                    move_evt = events.get("water", {}).get("move", "")
-                    if move_evt in ("moved", "pushed_block") and st.water_pos != st.water_exit:
-                        r += self.stagnation_penalty
-
             self.last_water_dist = d_new
 
         # --------- penalize bad moves ---------
@@ -731,6 +723,7 @@ class FireWaterEnv:
                     r += self.stay_penalty
 
         return r
+
 
     # ---------------------------------- Observation builder -------------------------------------
 
