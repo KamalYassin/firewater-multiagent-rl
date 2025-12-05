@@ -4,8 +4,6 @@ import random
 import shutil
 from typing import List, Dict
 
-DIFFICULTIES = ["easy", "medium", "hard"]
-
 
 # --------------------------------------------------------------------------------
 # Helpers
@@ -22,6 +20,42 @@ def list_level_files(root: str, difficulty: str) -> List[str]:
         for f in os.listdir(diff_dir)
         if f.lower().endswith(".txt")
     ]
+
+
+def discover_difficulties(in_root: str) -> List[str]:
+    """
+    Discover difficulties as subdirectories of in_root that contain at least
+    one `.txt` level file.
+
+    Example:
+      in_root/
+        supereasy/
+        easy/
+        medium/
+        hard/
+      -> ['supereasy', 'easy', 'medium', 'hard']
+    """
+    if not os.path.isdir(in_root):
+        raise ValueError(f"in_root does not exist or is not a directory: {in_root}")
+
+    difficulties = []
+    for name in os.listdir(in_root):
+        full = os.path.join(in_root, name)
+        if not os.path.isdir(full):
+            continue
+        # skip hidden dirs, just in case
+        if name.startswith("."):
+            continue
+        # only keep if it has at least one .txt level file
+        has_txt = any(
+            fname.lower().endswith(".txt")
+            for fname in os.listdir(full)
+        )
+        if has_txt:
+            difficulties.append(name)
+
+    difficulties.sort()
+    return difficulties
 
 
 def stratified_split(
@@ -51,6 +85,7 @@ def stratified_split(
 def copy_split(
     split_map: Dict[str, Dict[str, List[str]]],
     out_root: str,
+    difficulties: List[str],
 ) -> None:
     """
     Copy files into out_root/train|val|test/easy|medium|hard.
@@ -60,7 +95,7 @@ def copy_split(
     where split in {"train","val","test"} and difficulty in DIFFICULTIES.
     """
     for split in ["train", "val", "test"]:
-        for diff in DIFFICULTIES:
+        for diff in difficulties:
             files = split_map[split].get(diff, [])
             if not files:
                 continue
@@ -128,12 +163,20 @@ def main():
 
     print(f"\nLoading levels from: {args.in_root}\n")
 
+    difficulties = discover_difficulties(args.in_root)
+    if not difficulties:
+        raise ValueError(f"No difficulty subfolders with .txt levels found under {args.in_root}")
+
+    print("Discovered difficulties:")
+    for d in difficulties:
+        print(f"  - {d}")
+
     # list files per difficulty
     available: Dict[str, List[str]] = {}
-    for diff in DIFFICULTIES:
+    for diff in difficulties:
         files = list_level_files(args.in_root, diff)
         available[diff] = files
-        print(f"{diff.capitalize()}: {len(files)} levels")
+        print(f"{diff}: {len(files)} levels")
 
     # stratified split per difficulty
     split: Dict[str, Dict[str, List[str]]] = {
@@ -142,7 +185,7 @@ def main():
         "test": {},
     }
 
-    for diff in DIFFICULTIES:
+    for diff in difficulties:
         files = available[diff]
         parts = stratified_split(files, args.train_pct, args.val_pct, args.test_pct, rng)
         split["train"][diff] = parts["train"]
@@ -150,12 +193,12 @@ def main():
         split["test"][diff] = parts["test"]
 
     # copy to out_root/train|val|test/easy|medium|hard
-    copy_split(split, args.out_root)
+    copy_split(split, args.out_root, difficulties)
 
     print(f"\n✓ Split complete! Output saved to: {args.out_root}\n")
     for split_name in ["train", "val", "test"]:
         print(f"{split_name}:")
-        for diff in DIFFICULTIES:
+        for diff in difficulties:
             count = len(split[split_name].get(diff, []))
             print(f"  {diff}: {count} levels")
     print("")

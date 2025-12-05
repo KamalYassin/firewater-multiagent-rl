@@ -42,7 +42,7 @@ def difficulties_for_update(update: int, total_updates: int):
     #     return ("easy", "medium")
     # else:
     #     return ("easy", "medium", "hard")
-    return ("medium",)
+    return ("easy0",)
 
 
 def act_greedy(agent: MAPPOAgent,
@@ -428,7 +428,7 @@ def main():
     print(f"Saved checkpoint → {ckpt_path}")
 
     # Post-training evaluation on EASY levels only
-    eval_env = make_env(difficulties=("easy",))
+    eval_env = make_env(difficulties=("easy0",))
     easy_greedy_sr = evaluate_policy(eval_env, agent, device,
                                      num_episodes=200,
                                      max_steps=50)

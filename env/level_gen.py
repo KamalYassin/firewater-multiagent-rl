@@ -6,10 +6,35 @@ from typing import List, Tuple, Optional, Set
 
 from .firewater_env import FireWaterEnv, parse_level_from_string, NUM_ACTIONS
 
+TEMPLATE_SUFFIX = "_templates.txt"
+
 
 # --------------------------------------------------------------------------------
 # Utilities to load templates
 # --------------------------------------------------------------------------------
+
+def discover_template_files(templates_dir: str) -> dict:
+    """
+    Scan templates_dir for files named '<name>_templates.txt' and
+    return a mapping: {name: full_path}.
+
+    Example:
+      supereasy_templates.txt -> {'supereasy': '/.../supereasy_templates.txt'}
+    """
+    files = {}
+    if not os.path.isdir(templates_dir):
+        print(f"[WARN] Templates dir does not exist: {templates_dir}")
+        return files
+
+    for fname in os.listdir(templates_dir):
+        if not fname.endswith(TEMPLATE_SUFFIX):
+            continue
+        diff_name = fname[: -len(TEMPLATE_SUFFIX)]  # strip suffix
+        full_path = os.path.join(templates_dir, fname)
+        files[diff_name] = full_path
+
+    return files
+
 
 def load_templates(path: str) -> List[str]:
     """
@@ -281,7 +306,7 @@ def main():
         "--templates-dir",
         type=str,
         default=os.path.join(os.path.dirname(__file__), "templates"),
-        help="Directory containing easy_templates.txt, medium_templates.txt, hard_templates.txt",
+        help="Directory containing templates.",
     )
     parser.add_argument(
         "--no-check",
@@ -296,11 +321,15 @@ def main():
 
     os.makedirs(out_root, exist_ok=True)
 
-    files = {
-        "easy": os.path.join(templates_dir, "easy_templates.txt"),
-        "medium": os.path.join(templates_dir, "medium_templates.txt"),
-        "hard": os.path.join(templates_dir, "hard_templates.txt"),
-    }
+    files = discover_template_files(templates_dir)
+
+    if not files:
+        print(f"[WARN] No '*{TEMPLATE_SUFFIX}' files found in {templates_dir}. Nothing to do.")
+        return
+    
+    print("[INFO] Found template sets:")
+    for difficulty, path in files.items():
+        print(f"  - {difficulty}: {path}")
 
     for difficulty, path in files.items():
         if not os.path.exists(path):

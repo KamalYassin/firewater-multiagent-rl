@@ -177,18 +177,20 @@ class FireWaterEnv:
 
     def __init__(self, level: LevelSpec, max_steps: int = 50,
                  step_penalty: float = -0.01,
-                 success_reward: float = 10.0,
+                 success_reward: float = 5.0,
                  death_penalty: float = -1.0,
                  hazards_mode: str = "wall",
-                 exit_partial_reward: float = 1.5,
-                 switch_reward: float = 1.0,
-                 push_block_reward: float = 0.1,
-                 door_open_reward: float = 4.0,
-                 dist_coef: float = 0.0,
+                 exit_partial_reward: float = 0.0,
+                 switch_reward: float = 0.0,
+                 push_block_reward: float = 0.0,
+                 door_open_reward: float = 0.0,
+                 dist_coef: float = 0.1,
                  move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
                  stagnation_penalty: float = -0.02,
-                 stay_penalty: float = -0.02):
+                 stay_penalty: float = -0.02,
+                 door_pass_reward: float = 0.0,
+                 hazard_pass_reward: float = 0.0):
         self.level = level
         self.height = level.height
         self.width = level.width
@@ -209,6 +211,9 @@ class FireWaterEnv:
         self.blocked_move_penalty = blocked_move_penalty
         self.stagnation_penalty = stagnation_penalty
         self.stay_penalty = stay_penalty
+
+        self.door_pass_reward = door_pass_reward
+        self.hazard_pass_reward = hazard_pass_reward
 
         # distance shaping state
         self.last_fire_dist = None
@@ -271,6 +276,11 @@ class FireWaterEnv:
         self.water_switches_seen = set()
         self.block_switches_seen = set()
         self.doors_opened_seen = set()
+
+        self.fire_doors_seen = set()
+        self.water_doors_seen = set()
+        self.fire_safe_hazards_seen = set()
+        self.water_safe_hazards_seen = set()
 
         self.state = st
         return self._build_observation()
@@ -693,6 +703,36 @@ class FireWaterEnv:
             move_evt = events.get(agent_key, {}).get("move", "")
             if move_evt == "pushed_block":
                 r += self.push_block_reward
+
+        for agent_key, pos in [("fire", st.fire_pos), ("water", st.water_pos)]:
+            if pos is None:
+                continue
+            x, y = pos
+            tile = st.base_grid[y, x]
+
+            # Crossing / standing on an OPEN door (once per tile per agent)
+            if tile in DOOR_CHARS and self._door_is_open(st, pos):
+                if agent_key == "fire":
+                    seen = self.fire_doors_seen
+                else:
+                    seen = self.water_doors_seen
+
+                if pos not in seen:
+                    r += self.door_pass_reward
+                    seen.add(pos)
+
+            # Using own hazard tiles (Fire on lava, Water on water), once per tile
+            if agent_key == "fire" and tile == LAVA:
+                seen = self.fire_safe_hazards_seen
+                if pos not in seen:
+                    r += self.hazard_pass_reward
+                    seen.add(pos)
+
+            if agent_key == "water" and tile == WATER:
+                seen = self.water_safe_hazards_seen
+                if pos not in seen:
+                    r += self.hazard_pass_reward
+                    seen.add(pos)
 
         # ---------- FIRE distance shaping + stagnation (best-so-far) ----------
         if self.has_fire and st.fire_exit is not None and st.fire_pos is not None:
