@@ -180,10 +180,11 @@ class FireWaterEnv:
                  success_reward: float = 10.0,
                  death_penalty: float = -1.0,
                  hazards_mode: str = "wall",
-                 exit_partial_reward: float = 1.0,
-                 switch_reward: float = 0.9,
-                 push_block_reward: float = 0.05,
-                 dist_coef: float = 0.05,
+                 exit_partial_reward: float = 1.5,
+                 switch_reward: float = 1.0,
+                 push_block_reward: float = 0.1,
+                 door_open_reward: float = 4.0,
+                 dist_coef: float = 0.0,
                  move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
                  stagnation_penalty: float = -0.02,
@@ -202,6 +203,7 @@ class FireWaterEnv:
         self.exit_partial_reward = exit_partial_reward
         self.switch_reward = switch_reward
         self.push_block_reward = push_block_reward
+        self.door_open_reward = door_open_reward
         self.dist_coef = dist_coef
         self.move_reward = move_reward
         self.blocked_move_penalty = blocked_move_penalty
@@ -268,6 +270,7 @@ class FireWaterEnv:
         self.fire_switches_seen = set()
         self.water_switches_seen = set()
         self.block_switches_seen = set()
+        self.doors_opened_seen = set()
 
         self.state = st
         return self._build_observation()
@@ -670,6 +673,20 @@ class FireWaterEnv:
                 if (bx, by) not in self.block_switches_seen:
                     r += 0.5 * self.switch_reward
                     self.block_switches_seen.add((bx, by))
+
+        # Compute which doors are currently open (based on switches + blocks + agents)
+        active_switches = self._active_switch_ids(st)
+        H, W = st.base_grid.shape
+        for y in range(H):
+            for x in range(W):
+                tile = st.base_grid[y, x]
+                if tile in DOOR_CHARS:
+                    sw = DOOR_TO_SWITCH[tile]
+                    if sw in active_switches:
+                        # door at (x,y) is currently open
+                        if (x, y) not in self.doors_opened_seen:
+                            r += self.door_open_reward
+                            self.doors_opened_seen.add((x, y))
 
         # Reward actually pushing blocks at all
         for agent_key in ["fire", "water"]:
