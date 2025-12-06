@@ -13,22 +13,24 @@ from env.firewater_env import render_ascii
 
 
 TRAIN_ROOT = "env/levels/dataset/train"
+TEST_ROOT = "env/levels/dataset/test"
+VAL_ROOT = "env/levels/dataset/val"
 
 
-def collect_level_paths(train_root: str, difficulties=("easy",)):
+def collect_level_paths(test_root: str, difficulties=("easy",)):
     paths = []
     for diff in difficulties:
-        pattern = os.path.join(train_root, diff, "*.txt")
+        pattern = os.path.join(test_root, diff, "*.txt")
         found = glob.glob(pattern)
         paths.extend(found)
     if not paths:
-        raise ValueError(f"No level files found under {train_root} for {difficulties}")
+        raise ValueError(f"No level files found under {test_root} for {difficulties}")
     print(f"Found {len(paths)} eval levels for {difficulties}", flush=True)
     return paths
 
 
-def make_env(difficulties=("easy",)):
-    level_paths = collect_level_paths(TRAIN_ROOT, difficulties=difficulties)
+def make_env(root: str, difficulties=("easy",)):
+    level_paths = collect_level_paths(root, difficulties=difficulties)
     return MultiAgentFireWaterEnv(level_paths)
 
 
@@ -198,11 +200,24 @@ def main():
         default=0,
         help="If >0, also run this many greedy episodes with ASCII rendering.",
     )
+    parser.add_argument(
+        "--test-split",
+        type=str,
+        default="test",
+        help="Which split to test on? (train/test/val).",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    env = make_env(difficulties=tuple(args.difficulties))
+    if args.test_split == "train":
+        root = TRAIN_ROOT
+    elif args.test_split == "val":
+        root = VAL_ROOT
+    else:
+        root = TEST_ROOT
+
+    env = make_env(root, difficulties=tuple(args.difficulties))
     obs = env.reset()
     sample_obs = obs["fire"]
     C, H, W = sample_obs.shape
