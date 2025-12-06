@@ -299,7 +299,7 @@ def main():
     parser.add_argument(
         "--out",
         type=str,
-        required=True,
+        default=os.path.join(os.path.dirname(__file__), "levels/generated"),
         help="Output directory root for generated levels.",
     )
     parser.add_argument(

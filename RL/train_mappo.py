@@ -136,9 +136,9 @@ def main():
     )
     parser.add_argument(
         "--training-mode",
-        choices=["easy", "curriculum"],
-        default="easy",
-        help="Choose between old easy-only training or curriculum training."
+        choices=["default", "curriculum"],
+        default="default",
+        help="Choose between default training or curriculum training."
     )
     parser.add_argument(
         "--ckpt",
