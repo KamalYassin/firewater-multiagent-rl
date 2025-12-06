@@ -13,6 +13,7 @@ from .env_wrapper import MultiAgentFireWaterEnv
 from .networks import ConvEncoder, Actor, CentralCritic
 from .mappo_agent import MAPPOAgent
 from .buffer import RolloutBuffer
+from .eval_policy import evaluate_policy, random_policy_baseline
 
 TRAIN_ROOT = "env/levels/dataset/train"
 TEST_ROOT = "env/levels/dataset/test"
@@ -28,7 +29,7 @@ def collect_level_paths(train_root: str, difficulties=("easy", "medium", "hard")
         paths.extend(found)
     if not paths:
         raise ValueError(f"No level files found under {train_root} for {difficulties}")
-    print(f"Found {len(paths)} train levels:", flush=True)
+    print(f"Found {len(paths)} levels in: {train_root}", flush=True)
     return paths
 
 
@@ -44,89 +45,6 @@ def difficulties_for_update(update: int, total_updates: int):
     else:
         return ("easy", "medium")
 
-
-def act_greedy(agent: MAPPOAgent,
-               obs_fire: torch.Tensor,
-               obs_water: torch.Tensor,
-               device: torch.device):
-    """
-    Deterministic policy: pick argmax action for both agents.
-    obs_fire/obs_water: (1, C, H, W) tensors on device.
-    """
-    with torch.no_grad():
-        feat_fire = agent.encoder(obs_fire)
-        feat_water = agent.encoder(obs_water)
-
-        logits_f = agent.actor_fire(feat_fire)
-        logits_w = agent.actor_water(feat_water)
-
-        a_f = torch.argmax(logits_f, dim=-1)
-        a_w = torch.argmax(logits_w, dim=-1)
-
-    return int(a_f.item()), int(a_w.item())
-
-
-def evaluate_policy(env: MultiAgentFireWaterEnv,
-                    agent: MAPPOAgent,
-                    device: torch.device,
-                    num_episodes: int = 200,
-                    max_steps: int = 50) -> float:
-    """
-    Run num_episodes with greedy (argmax) policy and compute success rate.
-    """
-    successes = 0
-
-    for ep in range(num_episodes):
-        obs = env.reset()
-        done = {"__all__": False}
-        steps = 0
-        info = {}
-
-        while not done["__all__"] and steps < max_steps:
-            fire_np = obs["fire"]
-            water_np = obs["water"]
-
-            fire_t = torch.from_numpy(fire_np).unsqueeze(0).to(device)
-            water_t = torch.from_numpy(water_np).unsqueeze(0).to(device)
-
-            a_f, a_w = act_greedy(agent, fire_t, water_t, device)
-
-            obs, rewards, dones, info = env.step({"fire": a_f, "water": a_w})
-            done = dones
-            steps += 1
-
-        if info.get("success", False):
-            successes += 1
-
-    return successes / float(num_episodes)
-
-
-def random_policy_baseline(env: MultiAgentFireWaterEnv,
-                           num_episodes: int = 200,
-                           max_steps: int = 50) -> float:
-    """
-    Compare against a pure random policy.
-    """
-    successes = 0
-
-    for ep in range(num_episodes):
-        obs = env.reset()
-        done = {"__all__": False}
-        steps = 0
-        info = {}
-
-        while not done["__all__"] and steps < max_steps:
-            a_f = random.randint(0, env.num_actions - 1)
-            a_w = random.randint(0, env.num_actions - 1)
-
-            obs, rewards, dones, info = env.step({"fire": a_f, "water": a_w})
-            done = dones
-            steps += 1
-
-        if info.get("success", False):
-            successes += 1
-
-    return successes / float(num_episodes)
 
 def discover_curriculum_stages(root: str) -> Tuple[List[str], Dict[str, List[str]]]:
     """
@@ -308,7 +226,7 @@ def main():
     agent = MAPPOAgent(encoder, actor_fire, actor_water, critic, optimizer)
 
     rollout_steps = 256      
-    num_updates = 500          
+    num_updates = args.updates          
     max_episode_steps = 50   
 
     buffer = RolloutBuffer(rollout_steps, obs_shape=(C, H, W), device=device)
@@ -467,9 +385,31 @@ def main():
                                             max_steps=50)
 
     print(
-        f"[EVAL EASY] Greedy success rate = {easy_greedy_sr:.3f}, "
+        f"[EVAL TRAIN EASY] Greedy success rate = {easy_greedy_sr:.3f}, "
         f"Random success rate = {easy_random_sr:.3f}"
     )
+
+    try:
+        test_level_paths = collect_level_paths(TEST_ROOT, difficulties=("easy",))
+        test_env = MultiAgentFireWaterEnv(test_level_paths)
+
+        test_greedy_sr = evaluate_policy(
+            test_env, agent, device,
+            num_episodes=200,
+            max_steps=50,
+        )
+        test_random_sr = random_policy_baseline(
+            test_env,
+            num_episodes=200,
+            max_steps=50,
+        )
+
+        print(
+            f"[EVAL TEST EASY]  Greedy SR = {test_greedy_sr:.3f}, "
+            f"Random SR = {test_random_sr:.3f}"
+        )
+    except ValueError as e:
+        print(f"[EVAL TEST EASY] Skipped: {e}")
 
 
 if __name__ == "__main__":
