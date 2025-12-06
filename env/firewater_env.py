@@ -185,6 +185,7 @@ class FireWaterEnv:
                  push_block_reward: float = 0.0,
                  door_open_reward: float = 0.0,
                  dist_coef: float = 0.1,
+                 fail_dist_coef: float = 0.0,
                  move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
                  stagnation_penalty: float = -0.02,
@@ -207,6 +208,7 @@ class FireWaterEnv:
         self.push_block_reward = push_block_reward
         self.door_open_reward = door_open_reward
         self.dist_coef = dist_coef
+        self.fail_dist_coef = fail_dist_coef
         self.move_reward = move_reward
         self.blocked_move_penalty = blocked_move_penalty
         self.stagnation_penalty = stagnation_penalty
@@ -783,7 +785,19 @@ class FireWaterEnv:
         for agent_key in ["fire", "water"]:
             move_evt = events.get(agent_key, {}).get("move", "")
             if move_evt.startswith("blocked"):
-                r += self.blocked_move_penalty  # e.g. -0.1
+                r += self.blocked_move_penalty
+
+        if done and not success:
+            # penalize remaining distance to exits
+            if st.fire_exit is not None and st.fire_pos is not None:
+                d_fire = self._manhattan_dist(st.fire_pos, st.fire_exit)
+                if d_fire is not None:
+                    r += self.fail_dist_coef * d_fire
+
+            if st.water_exit is not None and st.water_pos is not None:
+                d_water = self._manhattan_dist(st.water_pos, st.water_exit)
+                if d_water is not None:
+                    r += self.fail_dist_coef * d_water
 
         # ---------- terminal success/death bonuses ----------
         if done:
