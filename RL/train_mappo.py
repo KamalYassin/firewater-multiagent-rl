@@ -4,6 +4,8 @@ import glob
 import os
 import random
 import argparse
+from pathlib import Path
+import re
 import time
 
 from typing import List, Dict, Tuple
@@ -13,6 +15,8 @@ from .mappo_agent import MAPPOAgent
 from .buffer import RolloutBuffer
 
 TRAIN_ROOT = "env/levels/dataset/train"
+TEST_ROOT = "env/levels/dataset/test"
+VAL_ROOT = "env/levels/dataset/val"
 CURRICULUM_ROOT = "env/levels/curriculum"
 
 
@@ -35,14 +39,10 @@ def make_env(difficulties=("easy", "medium", "hard")):
 
 
 def difficulties_for_update(update: int, total_updates: int):
-    # """Simple 3-stage curriculum based on update index."""
-    # if update <= total_updates // 3:
-    #     return ("easy",)
-    # elif update <= (2 * total_updates) // 3:
-    #     return ("easy", "medium")
-    # else:
-    #     return ("easy", "medium", "hard")
-    return ("easy0",)
+    if update <= total_updates // 3:
+        return ("easy",) 
+    else:
+        return ("easy", "medium")
 
 
 def act_greedy(agent: MAPPOAgent,
@@ -190,6 +190,28 @@ def curriculum_stage_for_update(update: int,
     return stage_names[idx]
 
 
+def next_resume_ckpt_path(resume_path: str | Path, ckpt_dir: str | Path | None = None) -> Path:
+    """
+    Given a checkpoint path we are resuming from, create a new path with
+    an incremented numeric suffix.
+    """
+    p = Path(resume_path)
+    stem = p.stem
+    suffix = p.suffix
+
+    m = re.search(r"_(\d+)$", stem)
+    if m:
+        base = stem[:m.start()]
+        n = int(m.group(1)) + 1
+    else:
+        base = stem
+        n = 0
+
+    new_stem = f"{base}_{n}"
+    out_dir = Path(ckpt_dir) if ckpt_dir is not None else p.parent
+    return out_dir / f"{new_stem}{suffix}"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Train MAPPO agent on FireWater levels."
@@ -213,9 +235,18 @@ def main():
         default=500,
         help="Number of training updates to run in this call (default: 500).",
     )
+    parser.add_argument(
+        "--out-name",
+        type=str,
+        default="mappo",
+        help="Name of output ckpt.",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    save_dir = Path("checkpoints")
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     # Discover curriculum (if any)
     curriculum_stage_names, curriculum_levels = discover_curriculum_stages(CURRICULUM_ROOT)
@@ -255,18 +286,24 @@ def main():
     )
     optimizer = torch.optim.Adam(params, lr=3e-4)
 
-    if args.ckpt is not None:
-        print(f"\n[RESUME] Loading checkpoint from {args.ckpt}\n", flush=True)
-        ckpt = torch.load(args.ckpt, map_location=device)
+    resuming = args.ckpt is not None
 
+    resuming = args.ckpt is not None
+    if resuming:
+        resume_path = Path(args.ckpt)
+        print(f"\n[RESUME] Loading checkpoint from {resume_path}\n", flush=True)
+        ckpt = torch.load(resume_path, map_location=device)
         encoder.load_state_dict(ckpt["encoder"])
         actor_fire.load_state_dict(ckpt["actor_fire"])
         actor_water.load_state_dict(ckpt["actor_water"])
         critic.load_state_dict(ckpt["critic"])
-
         optimizer.load_state_dict(ckpt["optimizer"])
+
+        final_ckpt_path = next_resume_ckpt_path(resume_path, ckpt_dir=save_dir)
     else:
         print("\n[TRAIN] Starting from scratch\n", flush=True)
+        base_name = args.out_name if args.out_name is not None else "mappo"
+        final_ckpt_path = save_dir / f"{base_name}.pt"
 
     agent = MAPPOAgent(encoder, actor_fire, actor_water, critic, optimizer)
 
@@ -403,13 +440,6 @@ def main():
     print(f"Avg per update: {total_time / num_updates:.2f} s/update")
 
     # Save checkpoint
-    os.makedirs("checkpoints", exist_ok=True)
-    if args.ckpt is not None:
-        base, ext = os.path.splitext(args.ckpt)
-        ckpt_path = base + "_resume" + ext
-    else:
-        ckpt_path = "checkpoints/mappo_easy_curriculum.pt"
-
     torch.save(
         {
             "encoder": encoder.state_dict(),
@@ -423,12 +453,12 @@ def main():
                 "num_actions": env.num_actions,
             },
         },
-        ckpt_path,
+        final_ckpt_path,
     )
-    print(f"Saved checkpoint → {ckpt_path}")
+    print(f"Saved checkpoint → {final_ckpt_path}")
 
-    # Post-training evaluation on EASY levels only
-    eval_env = make_env(difficulties=("easy0",))
+    # Post-training evaluation on EASY levels only (for now)
+    eval_env = make_env(difficulties=("easy",))
     easy_greedy_sr = evaluate_policy(eval_env, agent, device,
                                      num_episodes=200,
                                      max_steps=50)

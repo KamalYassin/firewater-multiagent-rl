@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class ConvEncoder(nn.Module):
-    def __init__(self, in_channels: int = 11, hidden_dim: int = 128,
+    def __init__(self, in_channels: int = 15, hidden_dim: int = 128,
                  height: int = 12, width: int = 12):
         super().__init__()
         self.net = nn.Sequential(

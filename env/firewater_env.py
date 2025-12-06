@@ -177,14 +177,14 @@ class FireWaterEnv:
 
     def __init__(self, level: LevelSpec, max_steps: int = 50,
                  step_penalty: float = -0.01,
-                 success_reward: float = 5.0,
+                 success_reward: float = 10.0,
                  death_penalty: float = -1.0,
                  hazards_mode: str = "wall",
-                 exit_partial_reward: float = 0.0,
-                 switch_reward: float = 0.0,
-                 push_block_reward: float = 0.0,
+                 exit_partial_reward: float = 2.0,
+                 switch_reward: float = 1.0,
+                 push_block_reward: float = 0.02,
                  door_open_reward: float = 0.0,
-                 dist_coef: float = 0.1,
+                 dist_coef: float = 0.3,
                  fail_dist_coef: float = 0.0,
                  move_reward: float = 0.0,
                  blocked_move_penalty: float = -0.1,
@@ -839,7 +839,7 @@ class FireWaterEnv:
             "water": (C,H,W) float32  if water exists,
           }
 
-        Channels (C=11):
+        Channels (C=15):
           0: walls
           1: floor
           2: lava
@@ -855,7 +855,7 @@ class FireWaterEnv:
         assert self.state is not None
         st = self.state
         H, W = st.base_grid.shape
-        C = 11
+        C = 15
         base = np.zeros((C, H, W), dtype=np.float32)
 
         # static tiles
@@ -898,6 +898,21 @@ class FireWaterEnv:
         if st.water_exit is not None:
             x, y = st.water_exit
             base[10, y, x] = 1.0
+
+        # Fire exit direction
+        if st.fire_pos is not None and st.fire_exit is not None:
+            dx = st.fire_exit[0] - st.fire_pos[0]
+            dy = st.fire_exit[1] - st.fire_pos[1]
+            # Normalize to [-1, 0, 1] based on sign
+            base[11, :, :] = np.sign(dx) if dx != 0 else 0
+            base[12, :, :] = np.sign(dy) if dy != 0 else 0
+        
+        # Water exit direction  
+        if st.water_pos is not None and st.water_exit is not None:
+            dx = st.water_exit[0] - st.water_pos[0]
+            dy = st.water_exit[1] - st.water_pos[1]
+            base[13, :, :] = np.sign(dx) if dx != 0 else 0
+            base[14, :, :] = np.sign(dy) if dy != 0 else 0
 
         obs = {}
         if self.has_fire:
