@@ -227,7 +227,7 @@ def main():
 
     rollout_steps = 256      
     num_updates = args.updates          
-    max_episode_steps = 50   
+    max_episode_steps = 100   
 
     buffer = RolloutBuffer(rollout_steps, obs_shape=(C, H, W), device=device)
 
