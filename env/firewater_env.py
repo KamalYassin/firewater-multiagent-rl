@@ -988,7 +988,7 @@ def render_ascii(env: FireWaterEnv, file=sys.stdout):
 
 
 # --------------------------------------------------------------------------------
-# Manual control + scripted + policy
+# Manual control + scripted episode
 # --------------------------------------------------------------------------------
 
 def _key_to_actions(key: str) -> Tuple[Optional[int], Optional[int]]:
@@ -1162,43 +1162,6 @@ def load_script_file(path: str) -> Tuple[List[int], List[int]]:
     return fire_actions, water_actions
 
 
-def run_policy_episode(
-    env: FireWaterEnv,
-    policy_fn,
-    max_steps: int = 200,
-    render: bool = True,
-):
-    """
-    Run an episode where actions are chosen by a policy function.
-
-    policy_fn: callable taking obs dict and returning (action_fire, action_water)
-               each an int in [0,4].
-
-    Example signature
-        def policy_fn(obs: Dict[str, np.ndarray]) -> Tuple[int, int]:
-            ...
-    """
-    obs = env.reset()
-    done = False
-    t = 0
-    total_reward = 0.0
-
-    while not done and t < max_steps:
-        if render:
-            print(f"Step {t}")
-            render_ascii(env)
-
-        a_fire, a_water = policy_fn(obs)
-        obs, r, done, info = env.step(a_fire, a_water)
-        total_reward += r
-        t += 1
-
-    if render:
-        print("Final state:")
-        render_ascii(env)
-        print(f"Total reward: {total_reward:.3f}, steps={t}, info={info}")
-
-
 # --------------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------------
@@ -1222,13 +1185,6 @@ def main():
         help="Path to script file (for --mode scripted).",
     )
     parser.add_argument(
-        "--policy-module",
-        help=(
-            "Python module path providing a `policy_fn(obs) -> (a_fire, a_water)` function "
-            "for --mode policy, e.g. 'myproject.my_policy'."
-        ),
-    )
-    parser.add_argument(
         "--max-steps",
         type=int,
         default=200,
@@ -1250,18 +1206,6 @@ def main():
             parser.error("--mode scripted requires --script PATH")
         fire_actions, water_actions = load_script_file(args.script)
         run_scripted_episode(env, fire_actions, water_actions, render=True)
-
-    elif args.mode == "policy":
-        if not args.policy_module:
-            parser.error("--mode policy requires --policy-module MODULE_PATH")
-
-        # dynamically import the module and get policy_fn
-        mod = import_module(args.policy_module)
-        if not hasattr(mod, "policy_fn"):
-            parser.error(f"Module {args.policy_module!r} has no function 'policy_fn'")
-
-        policy_fn = getattr(mod, "policy_fn")
-        run_policy_episode(env, policy_fn, max_steps=args.max_steps, render=True)
 
 
 if __name__ == "__main__":
