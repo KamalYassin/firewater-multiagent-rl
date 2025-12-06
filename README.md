@@ -171,3 +171,34 @@ This prints, for each of the `visualize-episodes` runs:
 - `--max-steps`: Max steps per eval episode (default: 50).
 - `--visualize-episodes`: If >0, runs this many greedy episodes with ASCII rendering.
 - `--test-split`: Which split to test on (train/test/val) (default: "test").
+
+## Additional Testing of Environment & Levels
+`firewater_env.py` itself can be called to test the environment/levels with manual and scripted modes.
+
+### Manual Testing
+Run this from project root:
+```
+python -m env.firewater_env env/levels/testing/switch_door_block.txt --mode manual
+```
+
+You can then control each agent manually, using the following keyboard controls:
+
+Fire (F):
+    W A S D : up, left, down, right
+
+Water (G):
+    I J K L : up, left, down, right
+
+You must press enter after entering a character to move to the next step. Leaving blank will make both agents *STAY*.
+
+### Scripted Testing
+Run this from project root:
+```
+python -m env.firewater_env env/levels/testing/switch_door_block.txt --mode scripted --script env/scripts/test_script.txt
+```
+
+This will cause the agents to act according to each line in the script, with the format being:
+`fire_action water_action` for each line.
+
+where actions are ints in [0,4]:
+    `0=UP, 1=LEFT, 2=DOWN, 3=RIGHT, 4=STAY`
