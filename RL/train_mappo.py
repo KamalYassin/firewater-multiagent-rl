@@ -47,14 +47,6 @@ def difficulties_for_update(update: int, total_updates: int):
 
 
 def discover_curriculum_stages(root: str) -> Tuple[List[str], Dict[str, List[str]]]:
-    """
-    Look under `root` for subdirectories whose names end in a digit [0-9]
-    and contain at least one `.txt` file.
-
-    Returns:
-        stage_names: ordered list of stage directory names (e.g. ["stage0", "stage1", "easy2"])
-        stage_level_paths: dict mapping stage_name -> list of level paths
-    """
     stage_meta = []
     stage_level_paths: Dict[str, List[str]] = {}
 
@@ -90,15 +82,6 @@ def discover_curriculum_stages(root: str) -> Tuple[List[str], Dict[str, List[str
 def curriculum_stage_for_update(update: int,
                                 num_updates: int,
                                 stage_names: List[str]) -> str:
-    """
-    Evenly divide [1..num_updates] across len(stage_names) stages.
-
-    Example: num_updates=500, 4 stages:
-      updates 1–125  -> stage_names[0]
-      updates 126–250 -> stage_names[1]
-      updates 251–375 -> stage_names[2]
-      updates 376–500 -> stage_names[3]
-    """
     n = len(stage_names)
     if n == 0:
         raise ValueError("curriculum_stage_for_update called with no stages")
@@ -109,10 +92,6 @@ def curriculum_stage_for_update(update: int,
 
 
 def next_resume_ckpt_path(resume_path: str | Path, ckpt_dir: str | Path | None = None) -> Path:
-    """
-    Given a checkpoint path we are resuming from, create a new path with
-    an incremented numeric suffix.
-    """
     p = Path(resume_path)
     stem = p.stem
     suffix = p.suffix
