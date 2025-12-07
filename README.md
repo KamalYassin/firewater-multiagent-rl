@@ -274,8 +274,7 @@ We provide an example policy module that loads a checkpoint and exposes the requ
 
 - **File:** `RL/easy_demo_policy.py`  
 - **Default checkpoint path:**
-
-      CKPT_PATH = "checkpoints/mappo_easy_curriculum.pt"
+      CKPT_PATH = "checkpoints/mappo_easy.pt"
 
 - Internally, it:
   - Infers the observation shape from the first call to `policy_fn`.
@@ -285,7 +284,7 @@ We provide an example policy module that loads a checkpoint and exposes the requ
 
 To use it with your own model, either:
 
-- Save your best checkpoint as `checkpoints/mappo_easy_curriculum.pt`, **or**
+- Save your best checkpoint as `checkpoints/mappo_easy.pt`, **or**
 - Edit `CKPT_PATH` in `RL/easy_demo_policy.py` to point to your chosen `.pt` file.
 
 This setup lets you quickly **visually inspect** how the learned policy behaves on individual levels or across a whole batch of easy levels.
