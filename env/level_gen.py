@@ -9,18 +9,8 @@ from .firewater_env import FireWaterEnv, parse_level_from_string, NUM_ACTIONS
 TEMPLATE_SUFFIX = "_templates.txt"
 
 
-# --------------------------------------------------------------------------------
-# Utilities to load templates
-# --------------------------------------------------------------------------------
 
 def discover_template_files(templates_dir: str) -> dict:
-    """
-    Scan templates_dir for files named '<name>_templates.txt' and
-    return a mapping: {name: full_path}.
-
-    Example:
-      supereasy_templates.txt -> {'supereasy': '/.../supereasy_templates.txt'}
-    """
     files = {}
     if not os.path.isdir(templates_dir):
         print(f"[WARN] Templates dir does not exist: {templates_dir}")
@@ -29,7 +19,7 @@ def discover_template_files(templates_dir: str) -> dict:
     for fname in os.listdir(templates_dir):
         if not fname.endswith(TEMPLATE_SUFFIX):
             continue
-        diff_name = fname[: -len(TEMPLATE_SUFFIX)]  # strip suffix
+        diff_name = fname[: -len(TEMPLATE_SUFFIX)] 
         full_path = os.path.join(templates_dir, fname)
         files[diff_name] = full_path
 
@@ -37,12 +27,6 @@ def discover_template_files(templates_dir: str) -> dict:
 
 
 def load_templates(path: str) -> List[str]:
-    """
-    Load ASCII templates from a text file.
-
-    - Templates are separated by one or more blank lines.
-    - Each template is a rectangular ASCII grid.
-    """
     templates: List[str] = []
     current: List[str] = []
 
@@ -71,16 +55,8 @@ def grid_to_str(grid: List[List[str]]) -> str:
     return "\n".join("".join(row) for row in grid)
 
 
-# --------------------------------------------------------------------------------
-# Transformations: rotate & swap roles
-# --------------------------------------------------------------------------------
 
 def rotate_grid(grid: List[List[str]], k: int) -> List[List[str]]:
-    """
-    Rotate grid by k * 90 degrees clockwise.
-    k in {0,1,2,3}.
-    Works for any rectangular grid (H x W).
-    """
     k = k % 4
     if k == 0:
         return [row[:] for row in grid]
@@ -127,22 +103,8 @@ def swap_roles_in_grid(grid: List[List[str]]) -> List[List[str]]:
     return new_grid
 
 
-# --------------------------------------------------------------------------------
-# Solvability
-# --------------------------------------------------------------------------------
 
 def _state_key_from_env(env: FireWaterEnv) -> Tuple:
-    """
-    Produce a hashable key representing the logical game state,
-    so BFS can avoid revisiting states.
-
-    We include:
-      - fire position
-      - water position
-      - sorted block positions
-
-    The base grid is static for a given level, so we don't need it in the key.
-    """
     st = env.state
     if st is None:
         raise RuntimeError("FireWaterEnv.state is None during solvability check")
@@ -159,14 +121,7 @@ def is_level_solvable(
     max_depth: int = 80,
     max_states: int = 50_000,
 ) -> Tuple[bool, Optional[int]]:
-    """
-    BFS over joint actions (fire, water) to see if both can reach exits.
-    Returns (solvable, min_steps).
 
-    - max_depth: cutoff on number of steps in a solution path
-    - max_states: safety bound on number of visited states
-    """
-    # Parse ASCII into LevelSpec and build env
     lvl = parse_level_from_string(level_str)
     env = FireWaterEnv(lvl, max_steps=max_depth + 5)
 
@@ -199,7 +154,6 @@ def is_level_solvable(
                     return True, best
 
                 if len(visited) >= max_states:
-                    # Give up – treat as unsolvable under the given bounds
                     return False, best
 
                 q.append((new_env, depth + 1))
@@ -210,11 +164,7 @@ def is_level_solvable(
 def check_solvable(level_str: str,
                    max_depth: int = 80,
                    max_states: int = 50_000) -> bool:
-    """
-    Simple boolean wrapper used by the generator.
 
-    Returns True if a solution is found within (max_depth, max_states), else False.
-    """
     solvable, _ = is_level_solvable(
         level_str,
         max_depth=max_depth,
@@ -222,16 +172,8 @@ def check_solvable(level_str: str,
     )
     return solvable
 
-# --------------------------------------------------------------------------------
-# Main generation logic
-# --------------------------------------------------------------------------------
 
 def generate_variants_for_template(level_str: str) -> List[str]:
-    """
-    Given one ASCII template, produce up to 8 variants:
-      - 4 rotations (0, 90, 180, 270)
-      - For each rotation: original roles + swapped roles
-    """
     base_grid = str_to_grid(level_str)
 
     variants: List[str] = []
@@ -254,13 +196,6 @@ def generate_from_templates(
     out_dir: str,
     check: bool = True,
 ) -> None:
-    """
-    For a given difficulty and template file:
-      - load templates
-      - generate 8 variants each
-      - check solvability
-      - save as .txt files under out_dir/<difficulty>/
-    """
     templates = load_templates(templates_path)
     print(f"[{difficulty.upper()}] Loaded {len(templates)} base templates from {templates_path}")
 
