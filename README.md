@@ -8,6 +8,8 @@ This repository contains the implementation of our Fireboy & Watergirl–inspire
 
 Two agents (Fireboy and Watergirl) must co-operate in a grid-world of walls, switches, doors, hazards, and exits. Each agent sees only its own local observation, but they are trained jointly with a shared policy and a centralized critic.
 
+---
+
 ## Repository Structure
 
 - `env/`
@@ -27,13 +29,15 @@ Two agents (Fireboy and Watergirl) must co-operate in a grid-world of walls, swi
     - `eval_policy.py`: evaluation + policy visualization.
 - `checkpoints/`: saved PyTorch checkpoints.
 
+---
+
 ## Setup
 
 ### Install dependencies (recommended to use a Python environment, we used Python 3.10.*):
 
 General dependency install instructions (for any Python version):
 ```
-pip install torch numpy
+pip install torch numpy pygame
 ```
 
 Recommended install (using requirements.txt for Python 3.10.*):
@@ -42,6 +46,8 @@ pip install -r requirements.txt
 ```
 
 *Note:* If you have a compatible NVIDIA GPU, include your compatible CUDA version to the torch install.
+
+---
 
 ## Level Generation
 
@@ -76,6 +82,8 @@ python -m env.level_gen --out env/levels/generated --templates-dir env/levels/te
 - `--templates-dir`: Directory containing `*_templates.txt`. Defaults to `env/templates`.
 - `--no-check`: If given, skips solvability checking (by default each variant is checked by a BFS that simulates both agents), it is recommended unless you are not confident your templates are valid. *WARNING:* It is very slow if you leave default BFS checking on.
 
+---
+
 ## Train/Val/Test Split of Levels
 
 Once you have generated `env/levels/generated/<difficulty>/*.txt`, create the dataset split:
@@ -100,6 +108,8 @@ What this does:
 - `--val-pct`: Fraction of levels per difficulty for val (default: 0.1).
 - `--test-pct`: Fraction of levels per difficulty for test (default: 0.1).
 - `--seed`: Random seed for shuffling (default: 188).
+
+---
 
 ## Training
 From the repo root:
@@ -146,6 +156,8 @@ python -m RL.train_mappo --training-mode curriculum --out-name mappo_curriculum
 
 After each `train_mappo` run, it will automatically evaluate it for 200 episodes in both the `train/` and `test/` levels, using a greedy policy evaluation method.
 
+---
+
 ## Evaluating a Checkpoint
 If you wish to manually evaluate an existing checkpoint, run this from the project root:
 ```
@@ -171,6 +183,8 @@ This prints, for each of the `visualize-episodes` runs:
 - `--max-steps`: Max steps per eval episode (default: 50).
 - `--visualize-episodes`: If >0, runs this many greedy episodes with ASCII rendering.
 - `--test-split`: Which split to test on (train/test/val) (default: "test").
+
+---
 
 ## Additional Testing of Environment & Levels
 `firewater_env.py` itself can be called to test the environment/levels with manual and scripted modes.
@@ -202,3 +216,91 @@ This will cause the agents to act according to each line in the script, with the
 
 where actions are ints in [0,4]:
     `0=UP, 1=LEFT, 2=DOWN, 3=RIGHT, 4=STAY`
+
+---
+
+## Pygame Viewer (GUI Visualization)
+
+In addition to ASCII visualization, we provide a simple Pygame-based viewer to inspect levels and watch trained policies interact with the environment.
+
+> **Note:** This requires `pygame` (included in `requirements.txt`). If needed, install manually via:
+```
+pip install pygame
+```
+
+### 1. Single-Level Viewer (`env.ui_viewer`)
+
+You can run a single level either **manually** (keyboard control) or using a **trained policy**.
+
+#### Manual mode
+
+From the project root:
+```
+python -m env.ui_viewer env/levels/dataset/train/easy/some_level.txt --mode manual
+```
+
+**Controls:**
+- **Fire (F)**: `W` (up), `A` (left), `S` (down), `D` (right)  
+- **Water (G)**: `I` (up), `J` (left), `K` (down), `L` (right)  
+- **Quit**: `Q` or `Esc`  
+
+The grid is drawn with coloured tiles for walls, agents, exits, switches, doors, etc., and updates every step.
+
+#### Policy mode
+
+To let a trained MAPPO policy play the level:
+```
+python -m env.ui_viewer env/levels/dataset/test/easy/some_level.txt --mode policy --policy-module RL.easy_demo_policy
+```
+
+Here:
+- `--mode policy` tells the viewer to use a function `policy_fn(obs) -> (a_fire, a_water)`.
+- `--policy-module` is a Python module path that exposes that `policy_fn` (see below).
+
+### 2. Demo Over Multiple Levels (`env.demo_easy`)
+
+To run a trained policy over **all** easy levels (or any glob pattern) one by one:
+```
+python -m env.demo_easy --policy-module RL.easy_demo_policy --pattern "env/levels/dataset/test/easy/*.txt" --max-steps 200
+```
+
+- `--pattern` is a glob for level paths (default: `env/levels/dataset/train/easy/*.txt`).
+- For each level, a Pygame window opens, runs up to `max-steps`, then closes and moves on.
+
+### 3. Example Policy Module (`RL/easy_demo_policy.py`)
+
+We provide an example policy module that loads a checkpoint and exposes the required `policy_fn`:
+
+- **File:** `RL/easy_demo_policy.py`  
+- **Default checkpoint path:**
+
+      CKPT_PATH = "checkpoints/mappo_easy_curriculum.pt"
+
+- Internally, it:
+  - Infers the observation shape from the first call to `policy_fn`.
+  - Reconstructs the encoder, actors, and critic.
+  - Loads weights from `CKPT_PATH`.
+  - Runs a **greedy** action selection for both agents.
+
+To use it with your own model, either:
+
+- Save your best checkpoint as `checkpoints/mappo_easy_curriculum.pt`, **or**
+- Edit `CKPT_PATH` in `RL/easy_demo_policy.py` to point to your chosen `.pt` file.
+
+This setup lets you quickly **visually inspect** how the learned policy behaves on individual levels or across a whole batch of easy levels.
+
+---
+
+## Final Notes and Limitations
+
+This codebase is still a work in progress and there are a few important caveats to keep in mind:
+
+#### Curriculum scheduling is manual when not using curriculum mode
+The function that decides which difficulties to train on over time is currently hard-coded (`difficulties_for_update` in `train_mappo.py`).
+
+For different experiments (e.g., only easy, or easy → medium → hard), you may want to manually edit this function to adjust when new difficulties are introduced, or to restrict training to a subset of levels. A more principled, automated curriculum (e.g., based on success rate thresholds or level-specific statistics) is left as future work.
+
+#### Navigation vs. true puzzle solving.
+The current best models are primarily solving navigation-style easy levels: short corridors, simple paths, and basic coordination to reach exits. While the environment supports richer mechanics (switches, doors, blocks, hazards), our submitted models do not yet reliably solve the more complex “puzzle-like” medium and hard templates that require multi-step planning and cooperation (e.g., one agent holding a switch while the other passes through a door).
+
+In other words, the project demonstrates that MAPPO can learn robust cooperative navigation policies in this environment, but full puzzle-solving behaviour (with long sequences of interdependent actions) remains an open direction. Extending the reward shaping, curriculum design, and possibly the network architecture to handle these harder levels is a natural next step beyond this submission.
