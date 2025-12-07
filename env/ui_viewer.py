@@ -18,9 +18,6 @@ from .firewater_env import (
 )
 
 
-# ---------------------------------------------------------
-# Basic Pygame config
-# ---------------------------------------------------------
 
 TILE_SIZE = 40      
 FPS = 1      
@@ -58,7 +55,6 @@ def get_ascii_lines(env: FireWaterEnv):
     buf = io.StringIO()
     render_ascii(env, file=buf)
     text = buf.getvalue()
-    # drop trailing blank line render_ascii prints
     lines = [ln for ln in text.splitlines() if ln.strip() != ""]
     return lines
 
@@ -90,7 +86,6 @@ def draw_env(screen, env: FireWaterEnv, font):
 
 
 def key_to_actions(pyg_key):
-    # manual controls
     fire_action = ACTION_STAY
     water_action = ACTION_STAY
 
