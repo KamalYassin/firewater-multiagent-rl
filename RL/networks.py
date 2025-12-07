@@ -11,7 +11,7 @@ class ConvEncoder(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Flatten(),  # -> (B, 64 * H * W)
+            nn.Flatten(),  
         )
         self.fc = nn.Linear(64 * height * width, hidden_dim)
 
@@ -45,5 +45,4 @@ class CentralCritic(nn.Module):
         )
 
     def forward(self, joint_obs: torch.Tensor) -> torch.Tensor:
-        # returns shape (B,)
         return self.value(joint_obs).squeeze(-1)
