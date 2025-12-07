@@ -17,37 +17,50 @@ from .firewater_env import (
     render_ascii,
 )
 
+TILE_SIZE = 48
+FPS = 1
 
-
-TILE_SIZE = 40      
-FPS = 1      
-
-BLACK   = (0, 0, 0)
-WHITE   = (240, 240, 240)
-GREY    = (120, 120, 120)
-CYAN    = (0, 200, 200)      
-RED     = (220, 60, 60)
-BLUE    = (60, 120, 220)
-GREEN   = (60, 200, 60)
-YELLOW  = (240, 220, 70)
-BROWN   = (140, 100, 60)
-PURPLE  = (150, 70, 200)
+BLACK = (10, 10, 15)
+WHITE = (240, 240, 240)
+GRID = (70, 70, 80)
+FLOOR = (40, 40, 45)
+WALL = (90, 90, 100)
+LAVA = (220, 80, 60)
+WATER = (70, 120, 230)
+BLOCK = (150, 105, 70)
+SWITCH = (240, 210, 80)
+FIRE_AGENT = (230, 70, 70)
+WATER_AGENT = (70, 140, 240)
+FIRE_EXIT = (255, 140, 140)
+WATER_EXIT = (140, 190, 255)
+DOOR_CLOSED = (40, 160, 90)
+DOOR_OPEN = (100, 220, 140)
 
 CHAR_COLORS = {
-    '#': GREY,      
-    '.': BLACK,     
-    'W': BLUE,      
-    'L': RED,       
-    'X': BROWN,    
-    'F': RED,       
-    'G': BLUE,      
-    'f': PURPLE,    
-    'g': CYAN,      
-    '1': YELLOW,
-    '2': YELLOW,
-    '3': YELLOW,
-    '4': YELLOW,
-    '5': YELLOW,
+    "#": WALL,
+    ".": FLOOR,
+    "W": WATER,
+    "L": LAVA,
+    "X": BLOCK,
+    "F": FIRE_AGENT,
+    "G": WATER_AGENT,
+    "f": FIRE_EXIT,
+    "g": WATER_EXIT,
+    "1": SWITCH,
+    "2": SWITCH,
+    "3": SWITCH,
+    "4": SWITCH,
+    "5": SWITCH,
+    "A": DOOR_CLOSED,
+    "B": DOOR_CLOSED,
+    "C": DOOR_CLOSED,
+    "D": DOOR_CLOSED,
+    "E": DOOR_CLOSED,
+    "a": DOOR_OPEN,
+    "b": DOOR_OPEN,
+    "c": DOOR_OPEN,
+    "d": DOOR_OPEN,
+    "e": DOOR_OPEN,
 }
 
 
@@ -59,8 +72,7 @@ def get_ascii_lines(env: FireWaterEnv):
     return lines
 
 
-
-def draw_env(screen, env: FireWaterEnv, font):
+def draw_env(screen, env: FireWaterEnv, tile_font, legend_font):
     lines = get_ascii_lines(env)
     rows = len(lines)
     cols = len(lines[0]) if rows > 0 else 0
@@ -69,20 +81,51 @@ def draw_env(screen, env: FireWaterEnv, font):
 
     for y, row in enumerate(lines):
         for x, ch in enumerate(row):
-            color = CHAR_COLORS.get(ch, BLACK)
+            base_color = CHAR_COLORS.get(ch, FLOOR)
             rect = pygame.Rect(
                 x * TILE_SIZE,
                 y * TILE_SIZE,
                 TILE_SIZE,
                 TILE_SIZE,
             )
-            pygame.draw.rect(screen, color, rect)
 
-            pygame.draw.rect(screen, WHITE, rect, 1)
+            pygame.draw.rect(screen, base_color, rect)
+            pygame.draw.rect(screen, GRID, rect, 1)
 
-    info_text = "WASD = Fire, IJKL = Water, Q = quit"
-    text_surf = font.render(info_text, True, WHITE)
-    screen.blit(text_surf, (5, rows * TILE_SIZE + 5))
+            glyph = None
+            glyph_color = WHITE
+
+            if ch == "F":
+                glyph = "F"
+            elif ch == "G":
+                glyph = "G"
+            elif ch in "12345":
+                glyph = ch
+                glyph_color = BLACK
+            elif ch == "X":
+                glyph = "X"
+            elif ch in "f":
+                pygame.draw.rect(screen, FIRE_EXIT, rect)
+                pygame.draw.rect(screen, WHITE, rect, 3)
+                glyph = "F"
+            elif ch in "g":
+                pygame.draw.rect(screen, WATER_EXIT, rect)
+                pygame.draw.rect(screen, WHITE, rect, 3)
+                glyph = "G"
+            elif ch in "ABCDEabcde":
+                door_color = DOOR_OPEN if ch.islower() else DOOR_CLOSED
+                pygame.draw.rect(screen, door_color, rect)
+                pygame.draw.rect(screen, WHITE, rect, 2)
+                glyph = "D"
+
+            if glyph is not None:
+                text_surf = tile_font.render(glyph, True, glyph_color)
+                text_rect = text_surf.get_rect(center=rect.center)
+                screen.blit(text_surf, text_rect)
+
+    legend = "Fire = red F, Fire exit = light red framed tile, Water = blue G, Water exit = light blue framed tile, Yellow = switch, Brown = block, Green = door"
+    text_surf = legend_font.render(legend, True, WHITE)
+    screen.blit(text_surf, (8, rows * TILE_SIZE + 4))
 
 
 def key_to_actions(pyg_key):
@@ -123,10 +166,11 @@ def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
     pygame.display.set_caption(f"Fire & Water Viewer - {os.path.basename(level_path)}")
 
     width = cols * TILE_SIZE
-    height = rows * TILE_SIZE + 30
+    height = rows * TILE_SIZE + 48
     screen = pygame.display.set_mode((width, height))
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Arial", 16)
+    tile_font = pygame.font.SysFont("Arial", 22, bold=True)
+    legend_font = pygame.font.SysFont("Arial", 14)
 
     running = True
     done = False
@@ -150,7 +194,7 @@ def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
             obs, reward, done, info = env.step(a_fire, a_water)
             step += 1
 
-        draw_env(screen, env, font)
+        draw_env(screen, env, tile_font, legend_font)
         pygame.display.flip()
         clock.tick(FPS)
 
@@ -162,8 +206,7 @@ def main():
     parser.add_argument("level", help="Path to level .txt file")
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--mode", choices=["manual", "policy"], default="manual")
-    parser.add_argument("--policy-module",
-                        help="e.g. 'RL.easy_demo_policy' when using --mode policy")
+    parser.add_argument("--policy-module", help="e.g. 'RL.easy_demo_policy' when using --mode policy")
     args = parser.parse_args()
 
     policy_fn = None
