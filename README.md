@@ -81,7 +81,7 @@ python -m env.level_gen --out env/levels/generated --templates-dir env/levels/te
 - `--out`: Root directory where per-difficulty folders will be created. Defaults to `env/levels/generated`.
 - `--templates-dir`: Directory containing `*_templates.txt`. Defaults to `env/templates`.
 - `--no-check`: If given, skips solvability checking (by default each variant is checked by a BFS that simulates both agents), it is recommended unless you are not confident your templates are valid. 
-> *NOTE:* It is very slow if you leave default BFS checking on.
+> **NOTE:** It is very slow if you leave default BFS checking on.
 
 ---
 
