@@ -1,4 +1,3 @@
-# RL/easy_demo_policy.py
 import os
 import numpy as np
 import torch
