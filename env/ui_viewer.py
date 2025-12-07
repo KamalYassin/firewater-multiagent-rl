@@ -36,6 +36,12 @@ WATER_EXIT = (140, 190, 255)
 DOOR_CLOSED = (40, 160, 90)
 DOOR_OPEN = (100, 220, 140)
 
+LEGEND_LINES = [
+    "Fire = red F, Fire exit = light red framed tile",
+    "Water = blue G, Water exit = light blue framed tile",
+    "Yellow = switch, Brown = block, Green = door",
+]
+
 CHAR_COLORS = {
     "#": WALL,
     ".": FLOOR,
@@ -104,11 +110,11 @@ def draw_env(screen, env: FireWaterEnv, tile_font, legend_font):
                 glyph_color = BLACK
             elif ch == "X":
                 glyph = "X"
-            elif ch in "f":
+            elif ch == "f":
                 pygame.draw.rect(screen, FIRE_EXIT, rect)
                 pygame.draw.rect(screen, WHITE, rect, 3)
                 glyph = "F"
-            elif ch in "g":
+            elif ch == "g":
                 pygame.draw.rect(screen, WATER_EXIT, rect)
                 pygame.draw.rect(screen, WHITE, rect, 3)
                 glyph = "G"
@@ -123,9 +129,10 @@ def draw_env(screen, env: FireWaterEnv, tile_font, legend_font):
                 text_rect = text_surf.get_rect(center=rect.center)
                 screen.blit(text_surf, text_rect)
 
-    legend = "Fire = red F, Fire exit = light red framed tile, Water = blue G, Water exit = light blue framed tile, Yellow = switch, Brown = block, Green = door"
-    text_surf = legend_font.render(legend, True, WHITE)
-    screen.blit(text_surf, (8, rows * TILE_SIZE + 4))
+    base_y = rows * TILE_SIZE + 4
+    for i, line in enumerate(LEGEND_LINES):
+        text_surf = legend_font.render(line, True, WHITE)
+        screen.blit(text_surf, (8, base_y + i * (legend_font.get_linesize())))
 
 
 def key_to_actions(pyg_key):
@@ -165,12 +172,22 @@ def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
     pygame.init()
     pygame.display.set_caption(f"Fire & Water Viewer - {os.path.basename(level_path)}")
 
-    width = cols * TILE_SIZE
-    height = rows * TILE_SIZE + 48
-    screen = pygame.display.set_mode((width, height))
-    clock = pygame.time.Clock()
     tile_font = pygame.font.SysFont("Arial", 22, bold=True)
     legend_font = pygame.font.SysFont("Arial", 14)
+
+    legend_widths = []
+    legend_heights = []
+    for line in LEGEND_LINES:
+        surf = legend_font.render(line, True, WHITE)
+        legend_widths.append(surf.get_width())
+        legend_heights.append(surf.get_height())
+    max_legend_width = max(legend_widths) if legend_widths else 0
+    total_legend_height = sum(legend_heights) if legend_heights else 0
+
+    width = max(cols * TILE_SIZE, max_legend_width + 16)
+    height = rows * TILE_SIZE + total_legend_height + 8
+    screen = pygame.display.set_mode((width, height))
+    clock = pygame.time.Clock()
 
     running = True
     done = False
