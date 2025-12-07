@@ -18,7 +18,8 @@ from .firewater_env import (
 )
 
 TILE_SIZE = 48
-FPS = 1
+FPS_POLICY = 1
+FPS_MANUAL = 30
 
 BLACK = (10, 10, 15)
 WHITE = (240, 240, 240)
@@ -160,7 +161,7 @@ def key_to_actions(pyg_key):
     return fire_action, water_action
 
 
-def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
+def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None, fps: int=1):
     lvl = parse_level_from_file(level_path)
     env = FireWaterEnv(lvl, max_steps=max_steps)
     obs = env.reset()
@@ -213,7 +214,7 @@ def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
 
         draw_env(screen, env, tile_font, legend_font)
         pygame.display.flip()
-        clock.tick(FPS)
+        clock.tick(fps)
 
     pygame.quit()
 
@@ -228,14 +229,17 @@ def main():
 
     policy_fn = None
     if args.mode == "policy":
+        fps = FPS_POLICY
         if not args.policy_module:
             parser.error("--mode policy requires --policy-module MODULE_PATH")
         mod = import_module(args.policy_module)
         if not hasattr(mod, "policy_fn"):
             parser.error(f"Module {args.policy_module!r} has no function 'policy_fn'")
         policy_fn = getattr(mod, "policy_fn")
+    else:
+        fps = FPS_MANUAL
 
-    run_viewer(args.level, max_steps=args.max_steps, policy_fn=policy_fn)
+    run_viewer(args.level, max_steps=args.max_steps, policy_fn=policy_fn, fps=fps)
 
 
 if __name__ == "__main__":
