@@ -81,8 +81,8 @@ def policy_fn(obs):
     if not _initialized:
         _init_agent_from_obs(fire_np)
 
-    fire_t = torch.from_numpy(fire_np).unsqueeze(0).to(DEVICE)   # (1,C,H,W)
-    water_t = torch.from_numpy(water_np).unsqueeze(0).to(DEVICE) # (1,C,H,W)
+    fire_t = torch.from_numpy(fire_np).unsqueeze(0).to(DEVICE)
+    water_t = torch.from_numpy(water_np).unsqueeze(0).to(DEVICE)
 
     a_f, a_w = _act_greedy(_agent, fire_t, water_t)
     return a_f, a_w
