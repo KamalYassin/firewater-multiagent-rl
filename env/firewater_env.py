@@ -7,9 +7,6 @@ import argparse
 from importlib import import_module
 
 
-# --------------------------------------------------------------------------------
-# Tile / object conventions
-# --------------------------------------------------------------------------------
 
 WALL = '#'
 FLOOR = '.'
@@ -28,11 +25,7 @@ SWITCH_TO_DOOR = {s: d for s, d in zip(SWITCH_CHARS, DOOR_CHARS)}
 DOOR_TO_SWITCH = {d: s for s, d in SWITCH_TO_DOOR.items()}
 
 
-# --------------------------------------------------------------------------------
-# Action space
-# --------------------------------------------------------------------------------
-
-# 0: UP, 1: LEFT, 2: DOWN, 3: RIGHT, 4: STAY
+#0: UP, 1: LEFT, 2: DOWN, 3: RIGHT, 4: STAY
 ACTION_UP = 0
 ACTION_LEFT = 1
 ACTION_DOWN = 2
@@ -50,15 +43,12 @@ ACTION_DELTAS = {
 NUM_ACTIONS = len(ACTION_DELTAS)
 
 
-# --------------------------------------------------------------------------------
-# Level parsing
-# --------------------------------------------------------------------------------
 
 @dataclass
 class LevelSpec:
     width: int
     height: int
-    base_grid: np.ndarray  # W x H of chars (static tiles: walls, floor, hazards, switches, doors)
+    base_grid: np.ndarray  # W x H of chars 
     fire_spawn: Optional[Tuple[int, int]]
     water_spawn: Optional[Tuple[int, int]]
     fire_exit: Optional[Tuple[int, int]]
@@ -68,7 +58,6 @@ class LevelSpec:
 
 def _normalize_lines(lines: Iterable[str]) -> List[str]:
     stripped = [ln.rstrip('\n') for ln in lines]
-    # drop leading/trailing, completely empty lines
     while stripped and stripped[0] == '':
         stripped.pop(0)
     while stripped and stripped[-1] == '':
@@ -77,12 +66,6 @@ def _normalize_lines(lines: Iterable[str]) -> List[str]:
 
 
 def parse_level_from_string(level_str: str) -> LevelSpec:
-    """
-    Parse a level from a multi-line string.
-
-    Uses the conventions:
-      F, G, f, g, X, 1-5, A-E, #, ., L, W
-    """
     lines = _normalize_lines(level_str.splitlines())
     if not lines:
         raise ValueError("Empty level string")
@@ -145,9 +128,6 @@ def parse_level_from_file(path: str) -> LevelSpec:
     return parse_level_from_string(text)
 
 
-# --------------------------------------------------------------------------------
-# Game state + core rules engine
-# --------------------------------------------------------------------------------
 
 @dataclass
 class GameState:
@@ -162,19 +142,6 @@ class GameState:
 
 
 class FireWaterEnv:
-    """
-    Core environment.
-
-    Multi-agent convention:
-
-      - obs = env.reset(level_spec)
-      - for each step:
-          obs, reward, done, info = env.step(action_fire, action_water)
-
-      - obs is dict with keys 'fire' and 'water' (if that agent exists),
-        each a (C, H, W) float32 tensor.
-    """
-
     def __init__(self, level: LevelSpec, max_steps: int = 50,
                  step_penalty: float = -0.01,
                  success_reward: float = 10.0,
@@ -197,12 +164,10 @@ class FireWaterEnv:
         self.width = level.width
         self.max_steps = max_steps
 
-        # reward config
         self.step_penalty = step_penalty
         self.success_reward = success_reward
         self.death_penalty = death_penalty
 
-        # shaping params
         self.exit_partial_reward = exit_partial_reward
         self.switch_reward = switch_reward
         self.push_block_reward = push_block_reward
@@ -217,7 +182,6 @@ class FireWaterEnv:
         self.door_pass_reward = door_pass_reward
         self.hazard_pass_reward = hazard_pass_reward
 
-        # distance shaping state
         self.last_fire_dist = None
         self.last_water_dist = None
         self.fire_best_dist = None
@@ -225,14 +189,11 @@ class FireWaterEnv:
 
         self.hazards_mode = hazards_mode
 
-        # state
         self.state: Optional[GameState] = None
 
-        # does each agent exist?
         self.has_fire = level.fire_spawn is not None
         self.has_water = level.water_spawn is not None
 
-        # tracking for one-time rewards
         self.fire_reached_exit_once = False
         self.water_reached_exit_once = False
         self.fire_switches_seen = set()
@@ -241,10 +202,8 @@ class FireWaterEnv:
 
         self.reset()
 
-    # ---------------------------------- public API for RL & testing -------------------------------------
 
     def reset(self) -> Dict[str, np.ndarray]:
-        # reset to initial state for this level
         st = GameState(
             base_grid=self.level.base_grid.copy(),
             fire_pos=self.level.fire_spawn,
@@ -256,7 +215,6 @@ class FireWaterEnv:
             max_steps=self.max_steps,
         )
 
-        # initialize distance shaping baselines
         self.last_fire_dist = None
         self.last_water_dist = None
         self.fire_best_dist = None
@@ -288,12 +246,6 @@ class FireWaterEnv:
         return self._build_observation()
 
     def step(self, action_fire: Optional[int], action_water: Optional[int]):
-        """
-        One environment step.
-
-        action_fire / action_water are ints 0-4 or None if agent doesn't exist.
-        Returns obs, reward (shared scalar), done, info.
-        """
         assert self.state is not None, "Call reset() before step()"
         st = self.state
 
@@ -332,7 +284,6 @@ class FireWaterEnv:
 
         return obs, reward, done, info
 
-    # ---------------------------------- core logic -------------------------------------
 
     def _in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
@@ -347,10 +298,6 @@ class FireWaterEnv:
         return set(st.blocks)
 
     def _active_switch_ids(self, st: GameState) -> set:
-        """
-        Return set of switch chars '1'..'5' that currently have an agent or block on them.
-        Doors for these switches are considered open.
-        """
         active = set()
         positions_to_check: List[Tuple[int, int]] = []
 
@@ -375,7 +322,6 @@ class FireWaterEnv:
     
     def _manhattan_dist(self, pos: Optional[Tuple[int, int]],
                     exit_pos: Optional[Tuple[int, int]]) -> Optional[int]:
-        """Manhattan distance between pos and exit_pos, or None if missing."""
         if pos is None or exit_pos is None:
             return None
         return abs(pos[0] - exit_pos[0]) + abs(pos[1] - exit_pos[1])
@@ -391,7 +337,6 @@ class FireWaterEnv:
         if tile == WALL:
             return False
 
-        # closed doors behave as walls
         if tile in DOOR_CHARS and not self._door_is_open(st, pos):
             return False
 
@@ -401,16 +346,11 @@ class FireWaterEnv:
         if tile == WATER and agent_is_fire:
             return False
 
-        # blocks and other agent considered impassable here;
+    
         # pushing is handled separately in movement function.
         return True
 
     def _is_passable_for_block(self, st: GameState, pos: Tuple[int, int]) -> bool:
-        """
-        Decide where a block can be pushed.
-        I.e.: floor, exits, switches, open doors.
-        Hazards and walls are forbidden for blocks.
-        """
         if not self._in_bounds(*pos):
             return False
 
@@ -427,7 +367,6 @@ class FireWaterEnv:
         if tile in DOOR_CHARS and not self._door_is_open(st, pos):
             return False
 
-        # otherwise OK (floor, switch, exit locations are just floor in base grid)
         return True
 
     def _apply_single_agent_move(
@@ -439,13 +378,8 @@ class FireWaterEnv:
         blocks: List[Tuple[int, int]],
         agent_is_fire: bool
     ) -> Tuple[Optional[Tuple[int, int]], List[Tuple[int, int]], Dict]:
-        """
-        Apply movement for one agent (Fire or Water), possibly pushing blocks.
-        Returns: new_pos, new_blocks, events
-        """
         events: Dict = {}
         if pos is None:
-            # agent absent in this level
             return None, blocks, events
 
         dx, dy = ACTION_DELTAS.get(action, (0, 0))
@@ -473,7 +407,6 @@ class FireWaterEnv:
             # position behind the block
             push_target = (target[0] + dx, target[1] + dy)
 
-            # can't push out of bounds or into another block or into other agent
             if (not self._in_bounds(*push_target)
                 or push_target in blocks_set
                 or (other_agent_pos is not None and push_target == other_agent_pos)
@@ -511,13 +444,6 @@ class FireWaterEnv:
         return target, blocks, events
 
     def _apply_actions(self, st: GameState, action_fire: int, action_water: int):
-        """
-        Apply both agents' actions, sequentially (Fire then Water),
-        updating positions and blocks.
-
-        Returns: next_state, events dict
-        """
-        # copy state
         next_st = GameState(
             base_grid=st.base_grid,
             fire_pos=st.fire_pos,
@@ -568,7 +494,6 @@ class FireWaterEnv:
         return next_st, events
 
     def _check_hazards(self, st: GameState) -> Dict:
-        # check hazards and mark death if any agent stands on its bad tile
         events = {}
         fire_dead = False
         water_dead = False
@@ -590,16 +515,6 @@ class FireWaterEnv:
         return events
 
     def _compute_done_and_flags(self, st: GameState, events: Dict) -> Tuple[bool, bool, bool]:
-        """
-        Return (done, success, death).
-
-        success:
-            - For every existing agent:
-                - that agent has an exit, AND
-                - its position equals its exit.
-        death:
-            - Any agent died on a hazard (probably not going to be used).
-        """
         death = events.get("fire_dead", False) or events.get("water_dead", False)
 
         def agent_success(has_agent: bool,
@@ -637,19 +552,12 @@ class FireWaterEnv:
                         success: bool,
                         death: bool,
                         events: Dict) -> float:
-        """
-        Compute reward with:
-          - base step penalty
-          - optional distance-based shaping toward exits
-          - terminal success/death bonuses
-        """
+
         # base step cost
         r = self.step_penalty
 
         shaping_coef = self.dist_coef
 
-        # ---------- partial rewards for exit progress ----------
-        # One-time bonus when each agent reaches its exit for the first time
         for agent_key, pos, exit_pos, flag_name in [
             ("fire", st.fire_pos, st.fire_exit, "fire_reached_exit_once"),
             ("water", st.water_pos, st.water_exit, "water_reached_exit_once"),
@@ -662,8 +570,7 @@ class FireWaterEnv:
                 r += self.exit_partial_reward
                 setattr(self, flag_name, True)
 
-        # ---------- reward switches & blocks ----------
-        # Reward an agent the first time it stands on each switch tile
+        
         for agent_key, pos, seen_attr in [
             ("fire", st.fire_pos, "fire_switches_seen"),
             ("water", st.water_pos, "water_switches_seen"),
@@ -678,7 +585,6 @@ class FireWaterEnv:
                     r += self.switch_reward
                     seen.add(pos)
 
-        # Reward blocks being pushed onto a new switch tile
         for (bx, by) in st.blocks:
             tile = st.base_grid[by, bx]
             if tile in SWITCH_CHARS:
@@ -686,7 +592,6 @@ class FireWaterEnv:
                     r += 0.5 * self.switch_reward
                     self.block_switches_seen.add((bx, by))
 
-        # Compute which doors are currently open (based on switches + blocks + agents)
         active_switches = self._active_switch_ids(st)
         H, W = st.base_grid.shape
         for y in range(H):
@@ -695,12 +600,10 @@ class FireWaterEnv:
                 if tile in DOOR_CHARS:
                     sw = DOOR_TO_SWITCH[tile]
                     if sw in active_switches:
-                        # door at (x,y) is currently open
                         if (x, y) not in self.doors_opened_seen:
                             r += self.door_open_reward
                             self.doors_opened_seen.add((x, y))
 
-        # Reward actually pushing blocks at all
         for agent_key in ["fire", "water"]:
             move_evt = events.get(agent_key, {}).get("move", "")
             if move_evt == "pushed_block":
@@ -712,7 +615,6 @@ class FireWaterEnv:
             x, y = pos
             tile = st.base_grid[y, x]
 
-            # Crossing / standing on an OPEN door (once per tile per agent)
             if tile in DOOR_CHARS and self._door_is_open(st, pos):
                 if agent_key == "fire":
                     seen = self.fire_doors_seen
@@ -723,7 +625,6 @@ class FireWaterEnv:
                     r += self.door_pass_reward
                     seen.add(pos)
 
-            # Using own hazard tiles (Fire on lava, Water on water), once per tile
             if agent_key == "fire" and tile == LAVA:
                 seen = self.fire_safe_hazards_seen
                 if pos not in seen:
@@ -736,7 +637,6 @@ class FireWaterEnv:
                     r += self.hazard_pass_reward
                     seen.add(pos)
 
-        # ---------- FIRE distance shaping + stagnation (best-so-far) ----------
         if self.has_fire and st.fire_exit is not None and st.fire_pos is not None:
             d_new = self._manhattan_dist(st.fire_pos, st.fire_exit)
 
@@ -748,7 +648,6 @@ class FireWaterEnv:
                     if delta_step == 0 and move_evt in ("moved", "pushed_block") and st.fire_pos != st.fire_exit:
                         r += self.stagnation_penalty
 
-                # shaping based on best distance so far in this episode
                 if self.fire_best_dist is None:
                     self.fire_best_dist = d_new
                 else:
@@ -760,7 +659,6 @@ class FireWaterEnv:
 
                 self.last_fire_dist = d_new
 
-        # ---------- WATER distance shaping + stagnation (best-so-far) ----------
         if self.has_water and st.water_exit is not None and st.water_pos is not None:
             d_new = self._manhattan_dist(st.water_pos, st.water_exit)
 
@@ -781,7 +679,6 @@ class FireWaterEnv:
 
                 self.last_water_dist = d_new
 
-        # ---------- penalize bad moves ----------
         for agent_key in ["fire", "water"]:
             move_evt = events.get(agent_key, {}).get("move", "")
             if move_evt.startswith("blocked"):
@@ -799,14 +696,12 @@ class FireWaterEnv:
                 if d_water is not None:
                     r += self.fail_dist_coef * d_water
 
-        # ---------- terminal success/death bonuses ----------
         if done:
             if success:
                 r += self.success_reward
             if death:
                 r += self.death_penalty
 
-        # ---------- STAY penalty only if not on exit or switch ----------
         for agent_key, pos, exit_pos in [
             ("fire", st.fire_pos, st.fire_exit),
             ("water", st.water_pos, st.water_exit)
@@ -827,31 +722,8 @@ class FireWaterEnv:
         return r
 
 
-    # ---------------------------------- Observation builder -------------------------------------
 
     def _build_observation(self) -> Dict[str, np.ndarray]:
-        """
-        Build full-grid observations for each agent.
-
-        Returns dict:
-          {
-            "fire":  (C,H,W) float32  if fire exists,
-            "water": (C,H,W) float32  if water exists,
-          }
-
-        Channels (C=15):
-          0: walls
-          1: floor
-          2: lava
-          3: water
-          4: switches (any 1-5)
-          5: doors (all, regardless open/closed)
-          6: blocks
-          7: fire position
-          8: water position
-          9: fire exit
-          10: water exit
-        """
         assert self.state is not None
         st = self.state
         H, W = st.base_grid.shape
@@ -903,11 +775,10 @@ class FireWaterEnv:
         if st.fire_pos is not None and st.fire_exit is not None:
             dx = st.fire_exit[0] - st.fire_pos[0]
             dy = st.fire_exit[1] - st.fire_pos[1]
-            # Normalize to [-1, 0, 1] based on sign
+
             base[11, :, :] = np.sign(dx) if dx != 0 else 0
             base[12, :, :] = np.sign(dy) if dy != 0 else 0
         
-        # Water exit direction  
         if st.water_pos is not None and st.water_exit is not None:
             dx = st.water_exit[0] - st.water_pos[0]
             dy = st.water_exit[1] - st.water_pos[1]
@@ -922,22 +793,8 @@ class FireWaterEnv:
         return obs
 
 
-# --------------------------------------------------------------------------------
-# ASCII renderer
-# --------------------------------------------------------------------------------
 
 def render_ascii(env: FireWaterEnv, file=sys.stdout):
-    """
-    Render the current state of the env as ASCII.
-
-    Priority (topmost last):
-      1) static base_grid
-      2) open/closed doors (visualized differently if open)
-      3) exits (f,g)
-      4) switches (1-5) if not overwritten
-      5) blocks (X)
-      6) agents (F,G)
-    """
     st = env.state
     if st is None:
         print("[Environment not initialized]", file=file)
@@ -959,7 +816,6 @@ def render_ascii(env: FireWaterEnv, file=sys.stdout):
                 else:
                     canvas[y, x] = ch  # closed door: uppercase
 
-    # exits (just for visualization, underlying base is technically floor)
     if st.fire_exit is not None:
         fx, fy = st.fire_exit
         if canvas[fy, fx] == FLOOR:
@@ -987,22 +843,8 @@ def render_ascii(env: FireWaterEnv, file=sys.stdout):
     print(file=file)
 
 
-# --------------------------------------------------------------------------------
-# Manual control + scripted episode
-# --------------------------------------------------------------------------------
 
 def _key_to_actions(key: str) -> Tuple[Optional[int], Optional[int]]:
-    """
-    Map keyboard input to (action_fire, action_water).
-
-    Fire (F):
-      W A S D : up, left, down, right
-
-    Water (G):
-      I J K L : up, left, down, right
-
-    Returns None for agents that should not move from that key.
-    """
     key = key.strip()
 
     # Fire controls (WASD)
@@ -1018,7 +860,6 @@ def _key_to_actions(key: str) -> Tuple[Optional[int], Optional[int]]:
     elif key.lower() == 'd':  # right
         fire_action = ACTION_RIGHT
 
-    # Water controls (IJKL)
     if key.lower() == 'i':    # up
         water_action = ACTION_UP
     elif key.lower() == 'j':  # left
@@ -1032,15 +873,6 @@ def _key_to_actions(key: str) -> Tuple[Optional[int], Optional[int]]:
 
 
 def play_manual(env: FireWaterEnv):
-    """
-    Simple manual control loop using stdin.
-
-    - Prints ASCII each step.
-    - You type a key and press Enter.
-    - Supports:
-        Fire: WASD
-        Water: IJKL
-    """
     obs = env.reset()
     done = False
 
@@ -1061,7 +893,6 @@ def play_manual(env: FireWaterEnv):
 
         fire_action, water_action = _key_to_actions(key)
 
-        # default to STAY if no action for that agent from this key
         if env.has_fire and fire_action is None:
             fire_action = ACTION_STAY
         if env.has_water and water_action is None:
@@ -1084,12 +915,7 @@ def run_scripted_episode(
     water_actions: Optional[List[int]] = None,
     render: bool = True
 ):
-    """
-    Run an episode with scripted actions for testing.
 
-    fire_actions: list of ints (0-4)
-    water_actions: list of ints (0-4) or None (STAY)
-    """
     obs = env.reset()
     done = False
     t = 0
@@ -1117,17 +943,6 @@ def run_scripted_episode(
 
 
 def load_script_file(path: str) -> Tuple[List[int], List[int]]:
-    """
-    Load a scripted action sequence from a text file.
-
-    Each non-empty, non-comment line should be:
-      fire_action water_action
-
-    where actions are ints in [0,4]:
-      0=UP, 1=LEFT, 2=DOWN, 3=RIGHT, 4=STAY
-
-    If only one int is provided, water defaults to STAY.
-    """
     fire_actions: List[int] = []
     water_actions: List[int] = []
     with open(path, "r") as f:
@@ -1162,9 +977,6 @@ def load_script_file(path: str) -> Tuple[List[int], List[int]]:
     return fire_actions, water_actions
 
 
-# --------------------------------------------------------------------------------
-# Main
-# --------------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
