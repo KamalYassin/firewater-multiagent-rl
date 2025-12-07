@@ -16,13 +16,13 @@ Two agents (Fireboy and Watergirl) must co-operate in a grid-world of walls, swi
     - `firewater_env.py`: core single-episode environment with grid logic and reward function.
     - `env_wrapper.py`: wraps multiple level files into a Gym-style vector env for training and evaluation.
     - `level_gen.py`: generates solvable levels from simple ASCII templates.
-    - `level_split.py`: splits generated levels intro `train/`, `val/`, `test/` splits.
+    - `level_split.py`: splits generated levels into `train/`, `val/`, `test/` splits.
     - `levels/`
         - `templates/`: template levels for input to the level generator.
         - `generated/`: auto-generated per-difficulty levels (output of `level_gen.py`).
         - `dataset/`: final split into `train/`, `val/`, `test/` (output of `level_split.py`)
 - `RL/`
-    - `networks.py`: convulutional encoder, actor heads, centralized critic.
+    - `networks.py`: convolutional encoder, actor heads, centralized critic.
     - `mappo_agent.py`: MAPPO logic (PPO update, advantage computation, etc.).
     - `buffer.py`: rollout buffer.
     - `train_mappo.py`: main training script.
@@ -45,7 +45,7 @@ Recommended install (using requirements.txt for Python 3.10.*):
 pip install -r requirements.txt
 ```
 
-*Note:* If you have a compatible NVIDIA GPU, include your compatible CUDA version to the torch install.
+> *Note:* If you have a compatible NVIDIA GPU, include your compatible CUDA version to the torch install.
 
 ---
 
@@ -80,7 +80,8 @@ python -m env.level_gen --out env/levels/generated --templates-dir env/levels/te
 #### `level_gen.py` Arguments:
 - `--out`: Root directory where per-difficulty folders will be created. Defaults to `env/levels/generated`.
 - `--templates-dir`: Directory containing `*_templates.txt`. Defaults to `env/templates`.
-- `--no-check`: If given, skips solvability checking (by default each variant is checked by a BFS that simulates both agents), it is recommended unless you are not confident your templates are valid. *WARNING:* It is very slow if you leave default BFS checking on.
+- `--no-check`: If given, skips solvability checking (by default each variant is checked by a BFS that simulates both agents), it is recommended unless you are not confident your templates are valid. 
+> *NOTE:* It is very slow if you leave default BFS checking on.
 
 ---
 
