@@ -7,7 +7,7 @@ from .networks import ConvEncoder, Actor, CentralCritic
 from .mappo_agent import MAPPOAgent
 from env.firewater_env import NUM_ACTIONS
 
-CKPT_PATH = "checkpoints/mappo_easy_curriculum.pt"
+CKPT_PATH = "checkpoints/mappo_easy.pt"
 HIDDEN_DIM = 128                               
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
