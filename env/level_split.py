@@ -5,12 +5,8 @@ import shutil
 from typing import List, Dict
 
 
-# --------------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------------
 
 def list_level_files(root: str, difficulty: str) -> List[str]:
-    """Return list of `.txt` level files under root/difficulty/."""
     diff_dir = os.path.join(root, difficulty)
     if not os.path.isdir(diff_dir):
         print(f"[WARN] Directory missing for difficulty '{difficulty}': {diff_dir}")
@@ -23,18 +19,6 @@ def list_level_files(root: str, difficulty: str) -> List[str]:
 
 
 def discover_difficulties(in_root: str) -> List[str]:
-    """
-    Discover difficulties as subdirectories of in_root that contain at least
-    one `.txt` level file.
-
-    Example:
-      in_root/
-        supereasy/
-        easy/
-        medium/
-        hard/
-      -> ['supereasy', 'easy', 'medium', 'hard']
-    """
     if not os.path.isdir(in_root):
         raise ValueError(f"in_root does not exist or is not a directory: {in_root}")
 
@@ -46,7 +30,6 @@ def discover_difficulties(in_root: str) -> List[str]:
         # skip hidden dirs, just in case
         if name.startswith("."):
             continue
-        # only keep if it has at least one .txt level file
         has_txt = any(
             fname.lower().endswith(".txt")
             for fname in os.listdir(full)
@@ -87,13 +70,6 @@ def copy_split(
     out_root: str,
     difficulties: List[str],
 ) -> None:
-    """
-    Copy files into out_root/train|val|test/easy|medium|hard.
-
-    split_map has shape:
-      split_map[split][difficulty] = list of file paths
-    where split in {"train","val","test"} and difficulty in DIFFICULTIES.
-    """
     for split in ["train", "val", "test"]:
         for diff in difficulties:
             files = split_map[split].get(diff, [])
@@ -108,9 +84,6 @@ def copy_split(
                 shutil.copy2(src, dst)
 
 
-# --------------------------------------------------------------------------------
-# Main
-# --------------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -192,7 +165,6 @@ def main():
         split["val"][diff] = parts["val"]
         split["test"][diff] = parts["test"]
 
-    # copy to out_root/train|val|test/easy|medium|hard
     copy_split(split, args.out_root, difficulties)
 
     print(f"\n✓ Split complete! Output saved to: {args.out_root}\n")
