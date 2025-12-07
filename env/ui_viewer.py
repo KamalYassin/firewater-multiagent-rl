@@ -4,7 +4,6 @@ import io
 import argparse
 from importlib import import_module
 
-
 import pygame
 
 from .firewater_env import (
@@ -17,6 +16,7 @@ from .firewater_env import (
     ACTION_STAY,
     render_ascii,
 )
+
 
 # ---------------------------------------------------------
 # Basic Pygame config
@@ -54,7 +54,6 @@ CHAR_COLORS = {
 }
 
 
-
 def get_ascii_lines(env: FireWaterEnv):
     buf = io.StringIO()
     render_ascii(env, file=buf)
@@ -90,8 +89,8 @@ def draw_env(screen, env: FireWaterEnv, font):
     screen.blit(text_surf, (5, rows * TILE_SIZE + 5))
 
 
-#Manual gaming
 def key_to_actions(pyg_key):
+    # manual controls
     fire_action = ACTION_STAY
     water_action = ACTION_STAY
 
@@ -114,7 +113,6 @@ def key_to_actions(pyg_key):
         water_action = ACTION_RIGHT
 
     return fire_action, water_action
-
 
 
 def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
@@ -164,8 +162,6 @@ def run_viewer(level_path: str, max_steps: int = 200, policy_fn=None):
     pygame.quit()
 
 
-
-
 def main():
     parser = argparse.ArgumentParser(description="Pygame viewer for FireWaterEnv")
     parser.add_argument("level", help="Path to level .txt file")
@@ -185,8 +181,6 @@ def main():
         policy_fn = getattr(mod, "policy_fn")
 
     run_viewer(args.level, max_steps=args.max_steps, policy_fn=policy_fn)
-
-
 
 
 if __name__ == "__main__":
