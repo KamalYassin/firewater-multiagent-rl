@@ -193,7 +193,7 @@ This prints, for each of the `visualize-episodes` runs:
 ### Manual Testing
 Run this from project root:
 ```
-python -m env.firewater_env env/levels/testing/switch_door_block.txt --mode manual
+python -m env.firewater_env env/levels/testing/hard_level_example.txt --mode manual
 ```
 
 You can then control each agent manually, using the following keyboard controls:
@@ -209,7 +209,7 @@ You must press enter after entering a character to move to the next step. Leavin
 ### Scripted Testing
 Run this from project root:
 ```
-python -m env.firewater_env env/levels/testing/switch_door_block.txt --mode scripted --script env/scripts/test_script.txt
+python -m env.firewater_env env/levels/testing/hard_level_example.txt --mode scripted --script env/scripts/test_script.txt
 ```
 
 This will cause the agents to act according to each line in the script, with the format being:
@@ -237,7 +237,7 @@ You can run a single level either **manually** (keyboard control) or using a **t
 
 From the project root:
 ```
-python -m env.ui_viewer env/levels/dataset/train/easy/some_level.txt --mode manual
+python -m env.ui_viewer env/levels/testing/hard_level_example.txt --mode manual
 ```
 
 **Controls:**
