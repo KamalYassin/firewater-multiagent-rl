@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 Templates are simple ASCII layouts with one level per block, stored under:
 ```
-env/levels/templates
+env/templates
 ```
 
 Naming convention:
