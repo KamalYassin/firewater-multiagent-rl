@@ -1,6 +1,6 @@
 # Firewater-multiagent-rl
 
-**Members:**
+**Contributors:**
 - Aidan Casselman 
 - Kamal Yassin 
 
