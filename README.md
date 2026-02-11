@@ -1,8 +1,9 @@
 # Firewater-multiagent-rl
 
 **Contributors:**
+- Kamal Yassin
 - Aidan Casselman 
-- Kamal Yassin 
+ 
 
 This repository contains the implementation of our Fireboy & Watergirl–inspired multi-agent reinforcement learning environment, along with training scaffolding for MAPPO.
 
